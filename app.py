@@ -1,20 +1,13 @@
-import asyncio
 import io
 import json
 import os
-import sys
 from datetime import datetime
 import requests
-import nest_asyncio
-import pandas as pd
 from PIL import Image
 
 import streamlit as st
 from google import genai
 from google.genai import types
-
-# 비동기 루프 중첩 허용
-nest_asyncio.apply()
 
 # ------------------------------------------------------------------
 # 기본 설정 및 디자인 CSS
@@ -192,51 +185,6 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 안전 메타 광고 수집 모듈 (안전 가드 적용)
-# ------------------------------------------------------------------
-async def scrape_meta_ad_images(target_url, max_items=5):
-    captured_images = []
-    try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 800}
-            )
-            page = await context.new_page()
-            await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
-
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
-            for _ in range(5):
-                await page.mouse.wheel(0, 1500)
-                await page.wait_for_timeout(500)
-
-            captured_images = await page.evaluate('''() => {
-                const images = [];
-                const imgElements = document.querySelectorAll('img');
-                imgElements.forEach(img => {
-                    if (img.naturalWidth > 150 && img.naturalHeight > 150) {
-                        const src = img.src;
-                        if ((src.includes("scontent") || src.includes("fbcdn")) && !images.includes(src)) {
-                            images.push(src);
-                        }
-                    }
-                });
-                return images;
-            }''')
-            await browser.close()
-    except Exception as e:
-        # Playwright 환경 미지원 시 예외 방어
-        pass
-        
-    return captured_images[:max_items]
-
-
-# ------------------------------------------------------------------
 # 구조화된 카피 추출 (브랜드명 / 메인 메시지 / 썸네일 / CTA)
 # ------------------------------------------------------------------
 STRUCTURED_OCR_PROMPT = """이 광고 이미지를 보고 아래 4가지 항목을 정리해줘. 다른 설명 없이 정확히 아래 형식으로만 답해줘.
@@ -356,53 +304,21 @@ def run_structured_ocr(image_bytes, file_name="image.png"):
 
 
 # ------------------------------------------------------------------
-# 소재 업로드/크롤링 + 인식 + 분석 공용 UI
+# 소재 업로드/인식 + 분석 공용 UI
 # ------------------------------------------------------------------
 def render_material_section(prefix, on_complete):
-    input_tab1, input_tab2 = st.tabs(["📁 직접 파일 업로드", "🔗 메타 광고 라이브러리 URL 수집"])
-    
+    uploaded_files = st.file_uploader(
+        "광고 이미지 업로드 (다중 선택 가능 / PNG, JPG)",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"{prefix}_uploader",
+    )
+
     uploaded_items = []
-    
-    with input_tab1:
-        files = st.file_uploader(
-            "광고 이미지 업로드 (다중 선택 가능 / PNG, JPG)",
-            type=["png", "jpg", "jpeg"],
-            accept_multiple_files=True,
-            key=f"{prefix}_uploader",
-        )
-        if files:
-            for f in files:
-                f.seek(0)
-                uploaded_items.append((f.name, f.read()))
-
-    with input_tab2:
-        meta_url = st.text_input(
-            "메타 광고 라이브러리 페이지 URL 입력",
-            placeholder="https://www.facebook.com/ads/library/?...",
-            key=f"{prefix}_meta_url_input"
-        )
-        if st.button("🚀 메타 광고 소재 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
-            if not meta_url.strip():
-                st.warning("메타 라이브러리 URL을 입력해주세요.")
-            else:
-                with st.spinner("광고 배너 이미지를 수집 중입니다..."):
-                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=5))
-                    
-                    if not img_urls:
-                        st.info("해당 URL에서 수집된 배너가 없습니다. 수동 파일 업로드를 이용하시거나 URL을 재확인해주세요.")
-                    else:
-                        st.session_state[f"{prefix}_crawled_images"] = []
-                        for idx, url in enumerate(img_urls, start=1):
-                            try:
-                                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                                fn = f"crawled_ad_{idx}.png"
-                                st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
-                            except Exception:
-                                pass
-                        st.success(f"광고 배너 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
-
-        if f"{prefix}_crawled_images" in st.session_state:
-            uploaded_items.extend(st.session_state[f"{prefix}_crawled_images"])
+    if uploaded_files:
+        for f in uploaded_files:
+            f.seek(0)
+            uploaded_items.append((f.name, f.read()))
 
     field_values_by_file = {}
     
@@ -540,7 +456,7 @@ if "structured_copy" not in st.session_state:
 # 01 · 경쟁사 소재 분석
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 선택한 뒤 파일 업로드 또는 메타 라이브러리 URL을 입력해 수집하세요.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 먼저 선택한 뒤, 그 경쟁사의 소재를 업로드하세요.")
 
     competitors = load_competitors()[segment]
     comp_col, add_col = st.columns([2, 1])
