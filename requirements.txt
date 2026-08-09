@@ -1,7 +1,4 @@
 streamlit
 google-genai
-playwright
-nest_asyncio
 pillow
-pandas
 requests
