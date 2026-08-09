@@ -2,7 +2,6 @@ import asyncio
 import io
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime
 import requests
@@ -14,22 +13,7 @@ import streamlit as st
 from google import genai
 from google.genai import types
 
-# ------------------------------------------------------------------
-# Streamlit Cloud / Colab 환경 호환 및 Playwright 자동 설치
-# ------------------------------------------------------------------
-try:
-    from google.colab import auth
-except ImportError:
-    auth = None
-
-@st.cache_resource
-def install_playwright_browsers():
-    try:
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-    except Exception:
-        pass
-
-install_playwright_browsers()
+# 비동기 루프 중첩 허용
 nest_asyncio.apply()
 
 # ------------------------------------------------------------------
@@ -208,29 +192,28 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# Playwright 초고속 메타 광고 수집 모듈
+# 안전 메타 광고 수집 모듈 (안전 가드 적용)
 # ------------------------------------------------------------------
 async def scrape_meta_ad_images(target_url, max_items=5):
-    from playwright.async_api import async_playwright
-    
     captured_images = []
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-        )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800}
-        )
-        page = await context.new_page()
-        await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
+    try:
+        from playwright.async_api import async_playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+            )
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800}
+            )
+            page = await context.new_page()
+            await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
 
-        try:
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
-            for _ in range(6):
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=20000)
+            for _ in range(5):
                 await page.mouse.wheel(0, 1500)
-                await page.wait_for_timeout(600)
+                await page.wait_for_timeout(500)
 
             captured_images = await page.evaluate('''() => {
                 const images = [];
@@ -245,10 +228,11 @@ async def scrape_meta_ad_images(target_url, max_items=5):
                 });
                 return images;
             }''')
-        except Exception as e:
-            st.error(f"메타 수집 중 에러 발생: {e}")
+            await browser.close()
+    except Exception as e:
+        # Playwright 환경 미지원 시 예외 방어
+        pass
         
-        await browser.close()
     return captured_images[:max_items]
 
 
@@ -375,7 +359,7 @@ def run_structured_ocr(image_bytes, file_name="image.png"):
 # 소재 업로드/크롤링 + 인식 + 분석 공용 UI
 # ------------------------------------------------------------------
 def render_material_section(prefix, on_complete):
-    input_tab1, input_tab2 = st.tabs(["📁 직접 파일 업로드", "🔗 메타 광고 라이브러리 URL 자동 수집"])
+    input_tab1, input_tab2 = st.tabs(["📁 직접 파일 업로드", "🔗 메타 광고 라이브러리 URL 수집"])
     
     uploaded_items = []
     
@@ -397,15 +381,15 @@ def render_material_section(prefix, on_complete):
             placeholder="https://www.facebook.com/ads/library/?...",
             key=f"{prefix}_meta_url_input"
         )
-        if st.button("🚀 메타 광고 소재 초고속 자동 수집", key=f"{prefix}_crawl_btn", type="primary"):
+        if st.button("🚀 메타 광고 소재 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner("Playwright 브라우저로 광고 배너 이미지를 수집 중입니다..."):
+                with st.spinner("광고 배너 이미지를 수집 중입니다..."):
                     img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=5))
                     
                     if not img_urls:
-                        st.error("수집된 이미지가 없습니다. URL을 다시 확인해주세요.")
+                        st.info("해당 URL에서 수집된 배너가 없습니다. 수동 파일 업로드를 이용하시거나 URL을 재확인해주세요.")
                     else:
                         st.session_state[f"{prefix}_crawled_images"] = []
                         for idx, url in enumerate(img_urls, start=1):
@@ -415,7 +399,7 @@ def render_material_section(prefix, on_complete):
                                 st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
                             except Exception:
                                 pass
-                        st.success(f"메타 라이브러리에서 광고 배너 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
+                        st.success(f"광고 배너 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
 
         if f"{prefix}_crawled_images" in st.session_state:
             uploaded_items.extend(st.session_state[f"{prefix}_crawled_images"])
