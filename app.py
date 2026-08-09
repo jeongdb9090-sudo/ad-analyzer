@@ -2,6 +2,8 @@ import asyncio
 import io
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime
 import requests
 import nest_asyncio
@@ -10,14 +12,28 @@ from PIL import Image
 
 import streamlit as st
 from google import genai
-from google.colab import auth if False else None # 로컬 환경 호환
 from google.genai import types
 
-# Colab / Streamlit 비동기 루프 중첩 허용
+# ------------------------------------------------------------------
+# Streamlit Cloud / Colab 환경 호환 및 Playwright 자동 설치
+# ------------------------------------------------------------------
+try:
+    from google.colab import auth
+except ImportError:
+    auth = None
+
+@st.cache_resource
+def install_playwright_browsers():
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    except Exception:
+        pass
+
+install_playwright_browsers()
 nest_asyncio.apply()
 
 # ------------------------------------------------------------------
-# 기본 설정
+# 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
 st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
 
@@ -192,21 +208,22 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# Playwright 초고속 메타 광고 수집 크롤러 모듈
+# Playwright 초고속 메타 광고 수집 모듈
 # ------------------------------------------------------------------
 async def scrape_meta_ad_images(target_url, max_items=5):
-    """메타 광고 라이브러리 URL에서 순수 광고 배너 이미지 URL 수집"""
     from playwright.async_api import async_playwright
     
     captured_images = []
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        browser = await p.chromium.launch(
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 800}
         )
         page = await context.new_page()
-        # 속도 향상을 위해 폰트, css 수집 차단
         await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
 
         try:
@@ -215,7 +232,6 @@ async def scrape_meta_ad_images(target_url, max_items=5):
                 await page.mouse.wheel(0, 1500)
                 await page.wait_for_timeout(600)
 
-            # 가로/세로 150px 초과하는 광고 배너 이미지 선별
             captured_images = await page.evaluate('''() => {
                 const images = [];
                 const imgElements = document.querySelectorAll('img');
@@ -230,7 +246,7 @@ async def scrape_meta_ad_images(target_url, max_items=5):
                 return images;
             }''')
         except Exception as e:
-            st.error(f"메타 수집 중 오류: {e}")
+            st.error(f"메타 수집 중 에러 발생: {e}")
         
         await browser.close()
     return captured_images[:max_items]
@@ -280,7 +296,7 @@ def structured_to_reference_text(fields):
 
 
 # ------------------------------------------------------------------
-# 스코어카드 분석 (핵심메시지 / 비주얼 / 타겟팅 / 기타, 각 1~5점)
+# 스코어카드 분석
 # ------------------------------------------------------------------
 ANALYSIS_PROMPT = """당신은 퍼포먼스 마케팅 및 광고 크리에이티브 전문가입니다.
 첨부된 광고 소재 이미지와 구조화된 정보를 참고해서 분석해주세요.
@@ -340,7 +356,6 @@ def scorecard_to_text(sc, name):
 
 
 def analyze_material(image_bytes, ref_text, file_name="image.png"):
-    """이미지 바이트 데이터를 스코어카드 형식으로 분석."""
     mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     resp = client.models.generate_content(
@@ -350,7 +365,6 @@ def analyze_material(image_bytes, ref_text, file_name="image.png"):
 
 
 def run_structured_ocr(image_bytes, file_name="image.png"):
-    """이미지 바이트 데이터에서 구조화 카피 추출."""
     mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     resp = client.models.generate_content(model=MODEL, contents=[image_part, STRUCTURED_OCR_PROMPT])
@@ -358,14 +372,12 @@ def run_structured_ocr(image_bytes, file_name="image.png"):
 
 
 # ------------------------------------------------------------------
-# 소재 업로드/크롤링 + 인식 + 분석 공용 UI (통합)
+# 소재 업로드/크롤링 + 인식 + 분석 공용 UI
 # ------------------------------------------------------------------
 def render_material_section(prefix, on_complete):
-    """업로드 또는 메타 URL 수집 -> 구조화 정보 인식/수정 -> 소재 분석 실행"""
-    
     input_tab1, input_tab2 = st.tabs(["📁 직접 파일 업로드", "🔗 메타 광고 라이브러리 URL 자동 수집"])
     
-    uploaded_items = [] # (file_name, image_bytes) 형태 튜플 담음
+    uploaded_items = []
     
     with input_tab1:
         files = st.file_uploader(
@@ -401,7 +413,7 @@ def render_material_section(prefix, on_complete):
                                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
                                 fn = f"crawled_ad_{idx}.png"
                                 st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
-                            except Exception as e:
+                            except Exception:
                                 pass
                         st.success(f"메타 라이브러리에서 광고 배너 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
 
@@ -471,7 +483,7 @@ def render_material_section(prefix, on_complete):
 
 
 # ------------------------------------------------------------------
-# 상단 앱바 (좌: 로고/타이틀, 우: API 키 입력)
+# 상단 앱바
 # ------------------------------------------------------------------
 top_col1, top_col2 = st.columns([3, 1.2])
 with top_col1:
@@ -503,7 +515,7 @@ client = genai.Client(api_key=input_api_key) if input_api_key else None
 MODEL = "gemini-2.0-flash"
 
 # ------------------------------------------------------------------
-# 사이드바: 부문 선택 (유아 / 초등 / 중등) + 메뉴 내비게이션
+# 사이드바 내비게이션
 # ------------------------------------------------------------------
 NAV_ITEMS = [
     "01 · 경쟁사 소재 분석",
@@ -526,7 +538,7 @@ with st.sidebar:
 
 
 # ------------------------------------------------------------------
-# 세션 상태 초기화 (세그먼트별로 구분)
+# 세션 상태 초기화
 # ------------------------------------------------------------------
 if "work" not in st.session_state:
     st.session_state.work = {}
@@ -541,10 +553,10 @@ if "structured_copy" not in st.session_state:
     st.session_state.structured_copy = {}
 
 # ------------------------------------------------------------------
-# 01 · 경쟁사 소재 분석 (경쟁사 태깅 + 프로필 자동 저장)
+# 01 · 경쟁사 소재 분석
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 먼저 선택한 뒤 파일 업로드 또는 메타 라이브러리 URL을 입력해 수집하세요.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 선택한 뒤 파일 업로드 또는 메타 라이브러리 URL을 입력해 수집하세요.")
 
     competitors = load_competitors()[segment]
     comp_col, add_col = st.columns([2, 1])
@@ -556,7 +568,7 @@ if nav == "01 · 경쟁사 소재 분석":
             if st.button("추가", key=f"{segment}_new_comp_btn"):
                 if new_comp.strip():
                     add_competitor(segment, new_comp.strip())
-                    st.success(f"'{new_comp.strip()}' 추가되었습니다. 위 목록에서 선택해주세요.")
+                    st.success(f"'{new_comp.strip()}' 추가되었습니다.")
                     st.rerun()
 
     def _on_comp_complete(results):
@@ -581,10 +593,10 @@ if nav == "01 · 경쟁사 소재 분석":
                 render_scorecard(r["scorecard"])
 
 # ------------------------------------------------------------------
-# 02 · 경쟁사 프로필 (누적 저장된 경쟁사별 소재 확인)
+# 02 · 경쟁사 프로필
 # ------------------------------------------------------------------
 elif nav == "02 · 경쟁사 프로필":
-    section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 소재가 경쟁사별로 누적됩니다. 한눈에 훑어보고, 펼쳐서 세부 내용을 확인하세요.")
+    section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 소재가 경쟁사별로 누적됩니다.")
 
     profiles = load_all_profiles().get(segment, {})
     competitors = load_competitors()[segment]
@@ -624,7 +636,7 @@ elif nav == "02 · 경쟁사 프로필":
 # 03 · 자사 소재 분석
 # ------------------------------------------------------------------
 elif nav == "03 · 자사 소재 분석":
-    section_header("03", f"{segment} 자사 광고 소재 분석", "지금 우리가 쓰고 있는 소재를 올려주세요. 경쟁사와 같은 기준(스코어카드)으로 분석합니다.")
+    section_header("03", f"{segment} 자사 광고 소재 분석", "지금 우리가 쓰고 있는 소재를 올려주세요.")
 
     def _on_own_complete(results):
         W["own_analyses"] = results
@@ -643,7 +655,7 @@ elif nav == "03 · 자사 소재 분석":
 # 04 · 메시지 갭 분석 & 위닝 포인트
 # ------------------------------------------------------------------
 elif nav == "04 · 메시지 갭 분석":
-    section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트", "경쟁사 전체(모든 경쟁사 누적 프로필)와 자사 소재를 비교해 부족한 메시지를 찾아냅니다.")
+    section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트", "경쟁사 전체와 자사 소재를 비교해 부족한 메시지를 찾아냅니다.")
 
     profiles = load_all_profiles().get(segment, {})
     all_comp_entries = [(comp, e) for comp, es in profiles.items() for e in es]
@@ -725,10 +737,10 @@ elif nav == "04 · 메시지 갭 분석":
                 st.markdown(W["gap_analysis"])
 
 # ------------------------------------------------------------------
-# 05 · 스토리보드 아이디어 (브랜드 정보 입력 포함)
+# 05 · 스토리보드 아이디어
 # ------------------------------------------------------------------
 elif nav == "05 · 스토리보드 아이디어":
-    section_header("05", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드 정보를 입력하고, 04 탭 갭 분석을 바탕으로 기획안을 생성합니다.")
+    section_header("05", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드 정보를 입력하고 기획안을 생성합니다.")
 
     with st.expander(f"{segment} 브랜드 정보 입력 / 수정", expanded=True):
         all_brands = load_all_brands()
