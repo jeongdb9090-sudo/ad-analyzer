@@ -1,10 +1,20 @@
+import asyncio
+import io
 import json
 import os
 from datetime import datetime
+import requests
+import nest_asyncio
+import pandas as pd
+from PIL import Image
 
 import streamlit as st
 from google import genai
+from google.colab import auth if False else None # 로컬 환경 호환
 from google.genai import types
+
+# Colab / Streamlit 비동기 루프 중첩 허용
+nest_asyncio.apply()
 
 # ------------------------------------------------------------------
 # 기본 설정
@@ -182,6 +192,51 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
+# Playwright 초고속 메타 광고 수집 크롤러 모듈
+# ------------------------------------------------------------------
+async def scrape_meta_ad_images(target_url, max_items=5):
+    """메타 광고 라이브러리 URL에서 순수 광고 배너 이미지 URL 수집"""
+    from playwright.async_api import async_playwright
+    
+    captured_images = []
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800}
+        )
+        page = await context.new_page()
+        # 속도 향상을 위해 폰트, css 수집 차단
+        await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
+
+        try:
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
+            for _ in range(6):
+                await page.mouse.wheel(0, 1500)
+                await page.wait_for_timeout(600)
+
+            # 가로/세로 150px 초과하는 광고 배너 이미지 선별
+            captured_images = await page.evaluate('''() => {
+                const images = [];
+                const imgElements = document.querySelectorAll('img');
+                imgElements.forEach(img => {
+                    if (img.naturalWidth > 150 && img.naturalHeight > 150) {
+                        const src = img.src;
+                        if ((src.includes("scontent") || src.includes("fbcdn")) && !images.includes(src)) {
+                            images.push(src);
+                        }
+                    }
+                });
+                return images;
+            }''')
+        except Exception as e:
+            st.error(f"메타 수집 중 오류: {e}")
+        
+        await browser.close()
+    return captured_images[:max_items]
+
+
+# ------------------------------------------------------------------
 # 구조화된 카피 추출 (브랜드명 / 메인 메시지 / 썸네일 / CTA)
 # ------------------------------------------------------------------
 STRUCTURED_OCR_PROMPT = """이 광고 이미지를 보고 아래 4가지 항목을 정리해줘. 다른 설명 없이 정확히 아래 형식으로만 답해줘.
@@ -284,11 +339,9 @@ def scorecard_to_text(sc, name):
     )
 
 
-def analyze_material(f, ref_text):
-    """이미지 1장을 스코어카드 형식으로 분석. (structured_copy_fields, scorecard_dict, raw_text) 반환."""
-    f.seek(0)
-    image_bytes = f.read()
-    mime_type = "image/png" if f.name.lower().endswith("png") else "image/jpeg"
+def analyze_material(image_bytes, ref_text, file_name="image.png"):
+    """이미지 바이트 데이터를 스코어카드 형식으로 분석."""
+    mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     resp = client.models.generate_content(
         model=MODEL, contents=[image_part, ANALYSIS_PROMPT.format(copy_text=ref_text)]
@@ -296,41 +349,79 @@ def analyze_material(f, ref_text):
     return parse_scorecard(resp.text)
 
 
-def run_structured_ocr(f):
-    f.seek(0)
-    image_bytes = f.read()
-    mime_type = "image/png" if f.name.lower().endswith("png") else "image/jpeg"
+def run_structured_ocr(image_bytes, file_name="image.png"):
+    """이미지 바이트 데이터에서 구조화 카피 추출."""
+    mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
     resp = client.models.generate_content(model=MODEL, contents=[image_part, STRUCTURED_OCR_PROMPT])
     return parse_structured_copy(resp.text)
 
 
 # ------------------------------------------------------------------
-# 소재 업로드 + 인식 + 분석 공용 UI
+# 소재 업로드/크롤링 + 인식 + 분석 공용 UI (통합)
 # ------------------------------------------------------------------
 def render_material_section(prefix, on_complete):
-    """업로드 -> 구조화 정보 인식/수정 -> '분석 실행' 시 스코어카드 생성.
-    on_complete(uploaded_files, results) 콜백으로 결과 리스트[{name, structured, scorecard}] 전달."""
-    uploaded_files = st.file_uploader(
-        "광고 이미지 업로드 (다중 선택 가능 / PNG, JPG)",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        key=f"{prefix}_uploader",
-    )
+    """업로드 또는 메타 URL 수집 -> 구조화 정보 인식/수정 -> 소재 분석 실행"""
+    
+    input_tab1, input_tab2 = st.tabs(["📁 직접 파일 업로드", "🔗 메타 광고 라이브러리 URL 자동 수집"])
+    
+    uploaded_items = [] # (file_name, image_bytes) 형태 튜플 담음
+    
+    with input_tab1:
+        files = st.file_uploader(
+            "광고 이미지 업로드 (다중 선택 가능 / PNG, JPG)",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key=f"{prefix}_uploader",
+        )
+        if files:
+            for f in files:
+                f.seek(0)
+                uploaded_items.append((f.name, f.read()))
+
+    with input_tab2:
+        meta_url = st.text_input(
+            "메타 광고 라이브러리 페이지 URL 입력",
+            placeholder="https://www.facebook.com/ads/library/?...",
+            key=f"{prefix}_meta_url_input"
+        )
+        if st.button("🚀 메타 광고 소재 초고속 자동 수집", key=f"{prefix}_crawl_btn", type="primary"):
+            if not meta_url.strip():
+                st.warning("메타 라이브러리 URL을 입력해주세요.")
+            else:
+                with st.spinner("Playwright 브라우저로 광고 배너 이미지를 수집 중입니다..."):
+                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=5))
+                    
+                    if not img_urls:
+                        st.error("수집된 이미지가 없습니다. URL을 다시 확인해주세요.")
+                    else:
+                        st.session_state[f"{prefix}_crawled_images"] = []
+                        for idx, url in enumerate(img_urls, start=1):
+                            try:
+                                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                                fn = f"crawled_ad_{idx}.png"
+                                st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
+                            except Exception as e:
+                                pass
+                        st.success(f"메타 라이브러리에서 광고 배너 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
+
+        if f"{prefix}_crawled_images" in st.session_state:
+            uploaded_items.extend(st.session_state[f"{prefix}_crawled_images"])
 
     field_values_by_file = {}
-    if uploaded_files:
+    
+    if uploaded_items:
         st.divider()
         st.markdown("**인식된 소재 정보 확인 · 수정**")
         st.caption("AI가 브랜드명 / 메인 메시지 / 썸네일 / CTA를 항목별로 자동 인식합니다. 틀린 부분은 직접 고쳐주세요.")
 
-        for f in uploaded_files:
-            file_key = f"{prefix}_{f.name}_{f.size}"
+        for name, img_bytes in uploaded_items:
+            file_key = f"{prefix}_{name}_{len(img_bytes)}"
 
             if client and file_key not in st.session_state.structured_copy:
                 try:
-                    with st.spinner(f"'{f.name}' 인식 중..."):
-                        parsed = run_structured_ocr(f)
+                    with st.spinner(f"'{name}' 인식 중..."):
+                        parsed = run_structured_ocr(img_bytes, file_name=name)
                 except Exception:
                     parsed = {"brand": "", "message": "", "thumbnail": "", "cta": ""}
                 st.session_state.structured_copy[file_key] = parsed
@@ -338,7 +429,7 @@ def render_material_section(prefix, on_complete):
             with st.container(border=True):
                 card_cols = st.columns([1, 2])
                 with card_cols[0]:
-                    st.image(f, use_container_width=True)
+                    st.image(img_bytes, use_container_width=True)
                 with card_cols[1]:
                     saved = st.session_state.structured_copy.get(
                         file_key, {"brand": "", "message": "", "thumbnail": "", "cta": ""}
@@ -353,7 +444,7 @@ def render_material_section(prefix, on_complete):
                             fv[fkey] = st.text_area(FIELD_LABELS[fkey], key=widget_key, height=60, label_visibility="collapsed")
                         else:
                             fv[fkey] = st.text_input(FIELD_LABELS[fkey], key=widget_key, label_visibility="collapsed")
-                    field_values_by_file[f.name] = fv
+                    field_values_by_file[name] = fv
 
         if not client:
             st.info("Gemini API 키를 입력하면 정보가 자동으로 채워집니다.")
@@ -365,16 +456,16 @@ def render_material_section(prefix, on_complete):
             else:
                 results = []
                 progress = st.progress(0, text="소재 분석 진행 중...")
-                for idx, f in enumerate(uploaded_files):
-                    fv = field_values_by_file.get(f.name, {})
+                for idx, (name, img_bytes) in enumerate(uploaded_items):
+                    fv = field_values_by_file.get(name, {})
                     ref_text = structured_to_reference_text(fv)
                     try:
-                        sc = analyze_material(f, ref_text)
+                        sc = analyze_material(img_bytes, ref_text, file_name=name)
                     except Exception as e:
                         sc = dict(_SCORE_EMPTY)
                         sc["other_desc"] = f"분석 오류: {e}"
-                    results.append({"name": f.name, "structured": fv, "scorecard": sc})
-                    progress.progress((idx + 1) / len(uploaded_files), text=f"[{f.name}] 분석 완료")
+                    results.append({"name": name, "structured": fv, "scorecard": sc})
+                    progress.progress((idx + 1) / len(uploaded_items), text=f"[{name}] 분석 완료")
                 progress.empty()
                 on_complete(results)
 
@@ -404,12 +495,12 @@ with top_col2:
         placeholder="Gemini API 키", label_visibility="collapsed",
     )
     st.markdown(
-        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 3.1 FLASH-LITE</div>',
+        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 2.0 FLASH</div>',
         unsafe_allow_html=True,
     )
 
 client = genai.Client(api_key=input_api_key) if input_api_key else None
-MODEL = "gemini-3.1-flash-lite"
+MODEL = "gemini-2.0-flash"
 
 # ------------------------------------------------------------------
 # 사이드바: 부문 선택 (유아 / 초등 / 중등) + 메뉴 내비게이션
@@ -453,7 +544,7 @@ if "structured_copy" not in st.session_state:
 # 01 · 경쟁사 소재 분석 (경쟁사 태깅 + 프로필 자동 저장)
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 먼저 선택한 뒤, 그 경쟁사의 소재를 업로드하세요. 결과는 02 탭 경쟁사 프로필에 자동으로 누적 저장됩니다.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 먼저 선택한 뒤 파일 업로드 또는 메타 라이브러리 URL을 입력해 수집하세요.")
 
     competitors = load_competitors()[segment]
     comp_col, add_col = st.columns([2, 1])
