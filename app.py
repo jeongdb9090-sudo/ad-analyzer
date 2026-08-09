@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 
 # ------------------------------------------------------------------
-# 기본 설정 및 디자인 CSS
+# 기본 설정 및 강력한 컬러 서식 CSS 적용 (다크모드 충돌 방지)
 # ------------------------------------------------------------------
 st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
 
@@ -20,67 +20,104 @@ st.markdown("""
 
 :root {
     --ink: #191B29;
-    --muted: #6B6E7D;
-    --paper: #F7F7F5;
+    --muted: #555866;
+    --paper: #F4F4F0;
     --surface: #FFFFFF;
-    --border: #E6E5E0;
+    --border: #D1D0C9;
     --primary: #2A2F6B;
     --primary-soft: #EEEFF7;
-    --amber: #F5A623;
-    --teal: #1F9D8C;
+    --amber: #D97706;
+    --teal: #0D9488;
 }
 
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-h1, h2, h3 { font-family: 'Space Grotesk', sans-serif !important; letter-spacing: -0.01em; }
+/* 기본 전체 텍스트 및 배경 강제 적용 */
+html, body, [class*="css"], .stMarkdown, p, span, label, div {
+    font-family: 'Inter', sans-serif;
+    color: var(--ink) !important;
+}
 
+/* 메인 화면 배경 */
+.stApp {
+    background-color: #FAF9F6 !important;
+}
+
+/* 헤더 제목 */
+h1, h2, h3, h4, h5, h6 {
+    font-family: 'Space Grotesk', sans-serif !important;
+    letter-spacing: -0.01em;
+    color: var(--ink) !important;
+}
+
+/* 앱바 (상단) */
 .appbar { display: flex; align-items: center; gap: 14px; padding: 18px 4px 20px 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
 .appbar-mark { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--teal)); flex-shrink: 0; }
-.appbar-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.1; color: var(--ink); }
-.appbar-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
-.appbar-pill { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal); background: #E9F7F5; border: 1px solid #CDEEE9; padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
+.appbar-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.1; color: var(--ink) !important; }
+.appbar-pill { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--teal) !important; background: #E9F7F5; border: 1px solid #CDEEE9; padding: 5px 10px; border-radius: 20px; white-space: nowrap; }
 
-.eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: var(--primary); background: var(--primary-soft); display: inline-block; padding: 3px 9px; border-radius: 4px; margin-bottom: 8px; }
-.section-title { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; }
-.section-desc { font-size: 13.5px; color: var(--muted); margin-bottom: 18px; }
+.eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: var(--primary) !important; background: var(--primary-soft); display: inline-block; padding: 3px 9px; border-radius: 4px; margin-bottom: 8px; font-weight: 600; }
+.section-title { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: var(--ink) !important; }
+.section-desc { font-size: 13.5px; color: var(--muted) !important; margin-bottom: 18px; }
 
-[data-testid="stSidebar"] { background: var(--surface); border-right: 1px solid var(--border); }
+/* 사이드바 (좌측 메뉴) 명확한 시인성 가공 */
+[data-testid="stSidebar"] {
+    background-color: #F0F1F5 !important;
+    border-right: 1px solid var(--border) !important;
+}
+[data-testid="stSidebar"] * {
+    color: var(--ink) !important;
+}
 [data-testid="stSidebar"] .eyebrow { margin-top: 6px; }
 
-.stButton > button { border-radius: 7px; font-weight: 600; border: 1px solid var(--border); }
-.stButton > button[kind="primary"] { background: var(--primary); border: none; }
-.stButton > button[kind="primary"]:hover { background: #21245A; }
-.stDownloadButton > button { border-radius: 7px; font-weight: 600; }
+/* 버튼 스타일 */
+.stButton > button { border-radius: 7px; font-weight: 600; border: 1px solid var(--border); background-color: #FFFFFF !important; color: var(--ink) !important; }
+.stButton > button[kind="primary"] { background-color: var(--primary) !important; color: #FFFFFF !important; border: none; }
+.stButton > button[kind="primary"] * { color: #FFFFFF !important; }
+.stButton > button[kind="primary"]:hover { background-color: #21245A !important; }
+.stDownloadButton > button { border-radius: 7px; font-weight: 600; background-color: #FFFFFF !important; color: var(--ink) !important; }
 
-.stTextInput input, .stTextArea textarea { border-radius: 7px !important; border-color: var(--border) !important; }
+/* 입력 필드 (Text Input & Text Area) 배경 및 폰트 색상 강제 지정 */
+.stTextInput input, .stTextArea textarea {
+    background-color: #FFFFFF !important;
+    color: var(--ink) !important;
+    border-radius: 7px !important;
+    border: 1px solid var(--border) !important;
+}
+.stTextInput label, .stTextArea label {
+    color: var(--ink) !important;
+    font-weight: 600;
+}
 
-.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-.stTabs [data-baseweb="tab"] { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; padding: 9px 12px; border-radius: 7px 7px 0 0; }
-.stTabs [aria-selected="true"] { color: var(--primary) !important; border-bottom: 2px solid var(--primary) !important; }
+/* 탭 스타일 */
+.stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; background-color: transparent !important; }
+.stTabs [data-baseweb="tab"] { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; padding: 9px 12px; border-radius: 7px 7px 0 0; color: var(--muted) !important; }
+.stTabs [aria-selected="true"] { color: var(--primary) !important; border-bottom: 2px solid var(--primary) !important; font-weight: 700; }
 
+/* 이미지 및 카드 컨테이너 */
 [data-testid="stImage"] img { border-radius: 8px; border: 1px solid var(--border); }
-div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 10px !important; border-color: var(--border) !important; background: var(--surface); }
+div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 10px !important; border: 1px solid var(--border) !important; background-color: #FFFFFF !important; }
 
-[data-testid="stExpander"] { border: 1px solid var(--border) !important; border-radius: 8px !important; background: var(--surface); }
-[data-testid="stAlert"] { border-radius: 8px; }
+/* Expander (접기/펴기) 카드 */
+[data-testid="stExpander"] { border: 1px solid var(--border) !important; border-radius: 8px !important; background-color: #FFFFFF !important; }
+[data-testid="stExpander"] * { color: var(--ink) !important; }
 
-.field-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em; color: var(--muted); margin: 6px 0 2px 0; text-transform: uppercase; }
-.history-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+.field-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--muted) !important; margin: 6px 0 2px 0; text-transform: uppercase; font-weight: 600; }
+.history-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; }
 
-/* 세그먼트 선택 라디오를 pill 버튼처럼 */
+/* 라디오 세그먼트 버튼 */
 div[role="radiogroup"] { gap: 6px; }
-div[role="radiogroup"] label { border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px !important; background: var(--surface); }
+div[role="radiogroup"] label { border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px !important; background-color: #FFFFFF !important; color: var(--ink) !important; }
 
-/* 스코어카드 */
+/* 스코어카드 비주얼 개선 */
 .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
-.score-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--paper); }
-.score-cat { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; }
-.score-stars { color: var(--amber); font-size: 15px; margin: 3px 0; }
-.score-desc { font-size: 12.5px; color: var(--ink); line-height: 1.4; }
+.score-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background-color: #F8F8F5 !important; }
+.score-cat { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted) !important; text-transform: uppercase; font-weight: 600; }
+.score-stars { color: var(--amber) !important; font-size: 15px; margin: 3px 0; }
+.score-desc { font-size: 12.5px; color: var(--ink) !important; line-height: 1.4; }
 
 /* 경쟁사 프로필 카드 */
-.comp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background: var(--surface); margin-bottom: 10px; }
-.comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; }
-.comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); margin-top: 2px; }
+.comp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background-color: #FFFFFF !important; margin-bottom: 10px; }
+.comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
+.comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 </style>
 """, unsafe_allow_html=True)
 
