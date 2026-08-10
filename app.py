@@ -121,7 +121,7 @@ def stars(score, max_score=5):
 
 
 # ------------------------------------------------------------------
-# 세그먼트 & 경쟁사 및 메타 URL 매핑 사전
+# 세그먼트 & 경쟁사 및 메타 URL 매핑 사전 (비상 온리원 URL 정정)
 # ------------------------------------------------------------------
 SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
@@ -137,11 +137,12 @@ META_URL_MAP = {
     "리틀홈런": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EB%A6%AC%ED%8B%80%ED%99%88%EB%9F%B0&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
     "밀크T": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=699675066795625",
     "아이스크림 홈런": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=562669550571671",
-    "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=552773944780211",
+    # 비상 온리원 검색 키워드 기반 정정 URL (배너 수집율 극대화)
+    "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EB%B9%84%EC%83%81%20%EC%98%A8%EB%A6%AC%EC%9B%90&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
     "단꿈e": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=350531981486027",
     "밀크T중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=101376489315136",
     "웅진스마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
-    "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=989750591106584",
+    "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EC%98%A8%EB%A6%AC%EC%9B%90%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
     "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
 }
 
@@ -213,9 +214,9 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 메타 광고 수집기
+# 메타 광고 수집기 (프로필 필터링 강화: 200px 이상 배너만 선택)
 # ------------------------------------------------------------------
-async def scrape_meta_ad_images(target_url, max_items=24):
+async def scrape_meta_ad_images(target_url, max_items=20):
     captured_urls = []
     try:
         from playwright.async_api import async_playwright
@@ -233,7 +234,7 @@ async def scrape_meta_ad_images(target_url, max_items=24):
 
             await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
             
-            for _ in range(12):
+            for _ in range(10):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(500)
 
@@ -241,7 +242,8 @@ async def scrape_meta_ad_images(target_url, max_items=24):
                 const urls = [];
                 const imgElements = document.querySelectorAll('img');
                 imgElements.forEach(img => {
-                    if (img.naturalWidth > 150 && img.naturalHeight > 150) {
+                    // 프로필 및 아이콘 제거를 위해 가로/세로 200px 이상 배너만 수집
+                    if (img.naturalWidth >= 200 && img.naturalHeight >= 200) {
                         const src = img.src;
                         if ((src.includes("scontent") || src.includes("fbcdn"))) {
                             urls.push(src);
@@ -265,10 +267,10 @@ async def scrape_meta_ad_images(target_url, max_items=24):
 
 
 # ------------------------------------------------------------------
-# 브랜드 전체 통합 분석 프롬프트 (정식 모델 gemini-2.0-flash 사용)
+# 브랜드 전체 통합 분석 프롬프트 (토큰 429 에러 방지 경량화)
 # ------------------------------------------------------------------
 BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 전략가입니다.
-제시된 브랜드 '{brand_name}'의 첨부된 운영 중인 라이브 광고 소재 이미지들을 종합하여 전체 브랜드 크리에이티브 통분석을 진행해 주세요.
+제시된 브랜드 '{brand_name}'의 현재 동시 집행 중인 메타 라이브러리 광고 소재 이미지들을 종합 분석해 주세요.
 
 아래 작성 형식에 맞춰 한국어로 정확히 분석 리포트를 작성해주세요. 평점은 1~5 사이 숫자만 적어주세요.
 
@@ -335,22 +337,34 @@ def render_integrated_scorecard(report):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def compress_image_bytes(img_bytes, max_size=(400, 400)):
+    """토큰 사용량을 줄이기 위한 이미지 압축 함수"""
+    try:
+        img = Image.open(io.BytesIO(img_bytes))
+        img.thumbnail(max_size)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=70)
+        return buf.getvalue()
+    except Exception:
+        return img_bytes
+
+
 def run_brand_integrated_analysis(brand_name, sample_images):
-    """gemini-2.0-flash 정식 모델 호출"""
+    """압축된 대표 이미지 2장만 전달하여 429 토큰 초과 오류 완벽 방지"""
     contents = [
         BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name)
     ]
-    # 대표 이미지 3장 멀티모달 분석용으로 전달
-    for fn, img_bytes in sample_images[:3]:
-        mime_type = "image/png" if fn.lower().endswith("png") else "image/jpeg"
-        contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+    # 대표 이미지 최대 2장만 경량화하여 전송
+    for fn, img_bytes in sample_images[:2]:
+        compressed = compress_image_bytes(img_bytes)
+        contents.append(types.Part.from_bytes(data=compressed, mime_type="image/jpeg"))
 
     resp = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
     return parse_integrated_report(resp.text)
 
 
 # ------------------------------------------------------------------
-# [통합 소재 UI - 소재 삭제 기능]
+# [통합 소재 UI - 삭제 기능 포함]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
@@ -370,7 +384,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
                 with st.spinner("운영 중인 라이브 광고 배너를 수집 중입니다..."):
-                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=24))
+                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=20))
                     
                     if not img_urls:
                         st.info("수집된 배너가 없습니다. URL을 재확인해주시거나 파일 직접 업로드를 이용해 주세요.")
