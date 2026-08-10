@@ -265,7 +265,7 @@ async def scrape_meta_ad_images(target_url, max_items=24):
 
 
 # ------------------------------------------------------------------
-# 브랜드 전체 통합 분석 프롬프트 (최신 gemini-2.5-flash)
+# 브랜드 전체 통합 분석 프롬프트 (정식 모델 gemini-2.0-flash 사용)
 # ------------------------------------------------------------------
 BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 전략가입니다.
 제시된 브랜드 '{brand_name}'의 첨부된 운영 중인 라이브 광고 소재 이미지들을 종합하여 전체 브랜드 크리에이티브 통분석을 진행해 주세요.
@@ -336,21 +336,21 @@ def render_integrated_scorecard(report):
 
 
 def run_brand_integrated_analysis(brand_name, sample_images):
-    """gemini-2.5-flash 표준 모델 전송"""
+    """gemini-2.0-flash 정식 모델 호출"""
     contents = [
         BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name)
     ]
-    # 최대 4개 대표 이미지를 멀티모달 분석용으로 첨부
-    for fn, img_bytes in sample_images[:4]:
+    # 대표 이미지 3장 멀티모달 분석용으로 전달
+    for fn, img_bytes in sample_images[:3]:
         mime_type = "image/png" if fn.lower().endswith("png") else "image/jpeg"
         contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
 
-    resp = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
+    resp = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
     return parse_integrated_report(resp.text)
 
 
 # ------------------------------------------------------------------
-# [통합 소재 UI - 소재 삭제 기능 & 메시지 칸 제거]
+# [통합 소재 UI - 소재 삭제 기능]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
@@ -412,9 +412,8 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
     
     if items:
         st.divider()
-        st.markdown(f"**수집된 소재 이미지 ({len(items)}건) — 잘못 들어온 연령대 소재는 ❌ 삭제하세요**")
+        st.markdown(f"**수집된 소재 이미지 ({len(items)}건) — 타겟 연령대가 다른 소재는 ❌ 삭제하세요**")
 
-        # 4열 그리드 배치
         cols_per_row = 4
         items_to_remove = []
         
@@ -424,7 +423,6 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             
             for idx, item in enumerate(row_items):
                 with grid_cols[idx]:
-                    # 개별 이미지 상단에 삭제 버튼 제공
                     btn_col1, btn_col2 = st.columns([2, 1])
                     with btn_col1:
                         st.caption(f"소재 #{i+idx+1}")
@@ -434,7 +432,6 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
 
                     st.image(item["bytes"], use_container_width=True)
 
-        # 삭제 요청된 항목 제거
         if items_to_remove:
             st.session_state[sess_key] = [it for it in st.session_state[sess_key] if it['id'] not in items_to_remove]
             st.rerun()
@@ -490,7 +487,7 @@ with top_col2:
         key="main_gemini_api_key_input"
     )
     st.markdown(
-        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 2.5 FLASH</div>',
+        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 2.0 FLASH</div>',
         unsafe_allow_html=True,
     )
 
@@ -648,7 +645,7 @@ elif nav == "04 · 메시지 갭 분석":
 """
             with st.spinner("인사이트 도출 중..."):
                 try:
-                    resp = client.models.generate_content(model="gemini-2.5-flash", contents=[INSIGHT_PROMPT.format(comp_summary=comp_summary)])
+                    resp = client.models.generate_content(model="gemini-2.0-flash", contents=[INSIGHT_PROMPT.format(comp_summary=comp_summary)])
                     W["insight"] = resp.text
                 except Exception as e: st.error(f"오류 발생: {e}")
 
@@ -692,7 +689,7 @@ elif nav == "04 · 메시지 갭 분석":
 """
                 with st.spinner("갭 분석 중..."):
                     try:
-                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=[GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)])
+                        resp = client.models.generate_content(model="gemini-2.0-flash", contents=[GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)])
                         W["gap_analysis"] = resp.text
                     except Exception as e: st.error(f"오류 발생: {e}")
 
@@ -779,7 +776,7 @@ elif nav == "05 · 스토리보드 아이디어":
             with st.spinner("스토리보드 기획안 작성 중..."):
                 try:
                     resp = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-2.0-flash",
                         contents=[STORYBOARD_PROMPT.format(
                             brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
                             target_audience=target_audience,
