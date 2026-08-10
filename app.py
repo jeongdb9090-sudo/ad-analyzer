@@ -1,3 +1,20 @@
+import subprocess
+import sys
+import streamlit as st
+
+# Streamlit Cloud 서버 구동 시 Playwright 크롬 브라우저 자동 다운로드
+@st.cache_resource
+def install_playwright_browsers():
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    except Exception as e:
+        print(f"Playwright browser install log: {e}")
+
+install_playwright_browsers()
+
+
+
+
 import asyncio
 import io
 import json
