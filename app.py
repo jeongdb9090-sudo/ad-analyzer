@@ -24,7 +24,7 @@ def install_playwright_browsers():
 install_playwright_browsers()
 
 # ------------------------------------------------------------------
-# 기본 설정 및 톤앤매너 디자인 CSS
+# 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
 st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
 
@@ -44,7 +44,6 @@ st.markdown("""
     --teal: #0D9488;
 }
 
-/* 기본 글자색 및 배경 */
 html, body, [class*="css"], .stMarkdown, p, span, label, div {
     font-family: 'Inter', sans-serif;
     color: var(--ink) !important;
@@ -75,13 +74,11 @@ h1, h2, h3, h4, h5, h6 {
 }
 [data-testid="stSidebar"] * { color: var(--ink) !important; }
 
-/* 버튼 및 셀렉트박스 높이 수평 맞춤 */
 .stButton > button { border-radius: 8px; font-weight: 600; border: 1px solid var(--border); background-color: #FFFFFF !important; color: var(--ink) !important; }
 .stButton > button[kind="primary"] { background-color: var(--primary) !important; color: #FFFFFF !important; border: none; }
 .stButton > button[kind="primary"] * { color: #FFFFFF !important; }
 .stButton > button[kind="primary"]:hover { background-color: #21245A !important; }
 
-/* 팝오버 및 셀렉트 박스 수평 정렬용 레이블 마진 조절 */
 .align-bottom-btn { margin-top: 28px; }
 
 .stTextInput input, .stTextArea textarea, div[data-baseweb="select"] > div {
@@ -91,33 +88,15 @@ h1, h2, h3, h4, h5, h6 {
     border: 1px solid var(--border) !important;
 }
 
-/* 4열 그리드 이미지 및 필드 카드 컴팩트화 */
-.ad-card-box {
-    background-color: #FFFFFF !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 10px !important;
-    padding: 10px !important;
-    margin-bottom: 16px !important;
-}
-.ad-card-title {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--primary) !important;
-    margin-bottom: 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; background-color: transparent !important; }
 .stTabs [data-baseweb="tab"] { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; padding: 9px 12px; border-radius: 7px 7px 0 0; color: var(--muted) !important; }
 .stTabs [aria-selected="true"] { color: var(--primary) !important; border-bottom: 2px solid var(--primary) !important; font-weight: 700; }
 
-.score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
-.score-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background-color: #F8F8F5 !important; }
-.score-cat { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--muted) !important; text-transform: uppercase; font-weight: 600; }
-.score-stars { color: var(--amber) !important; font-size: 15px; margin: 3px 0; }
-.score-desc { font-size: 12.5px; color: var(--ink) !important; line-height: 1.4; }
+.score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
+.score-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background-color: #FFFFFF !important; }
+.score-cat { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.05em; color: var(--muted) !important; text-transform: uppercase; font-weight: 600; }
+.score-stars { color: var(--amber) !important; font-size: 16px; margin: 4px 0; }
+.score-desc { font-size: 13px; color: var(--ink) !important; line-height: 1.5; white-space: pre-line; }
 
 .comp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background-color: #FFFFFF !important; margin-bottom: 10px; }
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
@@ -142,13 +121,28 @@ def stars(score, max_score=5):
 
 
 # ------------------------------------------------------------------
-# 데이터 로드 / 저장
+# 세그먼트 & 경쟁사 및 메타 URL 매핑 사전
 # ------------------------------------------------------------------
 SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
     "유아": ["윙크", "웅진스마트올", "밀크T아이", "리틀홈런"],
     "초등": ["밀크T", "아이스크림 홈런", "비상 온리원", "단꿈e", "기타"],
     "중등": ["밀크T중등", "웅진스마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
+}
+
+META_URL_MAP = {
+    "윙크": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EC%9C%99%ED%81%AC%ED%95%99%EC%8A%B5&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
+    "웅진스마트올": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=100188454740792",
+    "밀크T아이": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=113781314278271",
+    "리틀홈런": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EB%A6%AC%ED%8B%80%ED%99%88%EB%9F%B0&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
+    "밀크T": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=699675066795625",
+    "아이스크림 홈런": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=562669550571671",
+    "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=552773944780211",
+    "단꿈e": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=350531981486027",
+    "밀크T중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=101376489315136",
+    "웅진스마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
+    "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=989750591106584",
+    "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -219,7 +213,7 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 메타 광고 수집기 (전체 라이브 소재 수집으로 스크롤 확장 - 최대 30개)
+# 메타 광고 수집기 (최대 30개 라이브 소재 스크롤 수집)
 # ------------------------------------------------------------------
 async def scrape_meta_ad_images(target_url, max_items=30):
     captured_images = []
@@ -239,7 +233,6 @@ async def scrape_meta_ad_images(target_url, max_items=30):
 
             await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
             
-            # 라이브 소재를 다수 불러오기 위해 18번 연속 스크롤
             for _ in range(18):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(500)
@@ -259,25 +252,43 @@ async def scrape_meta_ad_images(target_url, max_items=30):
             }''')
             await browser.close()
     except Exception as e:
-        st.warning(f"메타 수집 환경 참고: {e}")
+        st.warning(f"메타 수집 중 참고: {e}")
         
     return captured_images[:max_items]
 
 
 # ------------------------------------------------------------------
-# 구조화된 카피 추출 (OCR) 및 스코어카드
+# 단일 OCR (메인 메시지만 추출) & 브랜드 전체 통합 분석 프롬프트
 # ------------------------------------------------------------------
-STRUCTURED_OCR_PROMPT = """이 광고 이미지를 보고 아래 4가지 항목을 정리해줘. 다른 설명 없이 정확히 아래 형식으로만 답해줘.
-이미지에 해당 내용이 없으면 그 항목은 비워둬.
+SINGLE_OCR_PROMPT = """이 광고 이미지에서 가장 크고 눈에 띄는 '메인 카피 메시지(헤드카피)'를 있는 그대로 1문장으로 적어줘. 
+다른 설명 없이 실제 이미지 속 핵심 문구만 짧게 출력해줘."""
 
-브랜드명: (이미지 안에 보이는 브랜드/제품명. 로고나 텍스트로 적힌 것만)
-메인 메시지: (가장 크고 눈에 띄는 핵심 카피 문구. 실제 적힌 텍스트 그대로)
-썸네일: (이미지의 비주얼을 아주 간단히, 한 줄로 요약)
-CTA: (구매하기, 지금 다운로드 등 행동 유도 문구)"""
+BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 전략가입니다.
+제시된 브랜드 '{brand_name}'의 현재 운영 중인 라이브 광고 소재 메시지들과 이미지들을 통합 분석해주세요.
 
-FIELD_LABELS = {"brand": "브랜드명", "message": "메인 메시지", "thumbnail": "썸네일", "cta": "CTA"}
-FIELD_ORDER = ["brand", "message", "thumbnail", "cta"]
-_LABEL_TO_KEY = {v: k for k, v in FIELD_LABELS.items()}
+[운영 중인 메인 메시지 모음]:
+{combined_messages}
+
+아래 작성 형식에 맞춰 한국어로 정확히 분석 리포트를 작성해주세요. 평점은 1~5 사이 숫자만 적어주세요.
+
+메시지_좋은점: (이 브랜드가 현재 강조하고 있는 메시지 전략의 강점 및 타겟 소구 후킹 포인트 2문장)
+메시지_아쉬운점: (메시지 측면에서 진부하거나 보완이 필요한 아쉬운 점 1~2문장)
+메시지_평점: (숫자만 1~5)
+
+비주얼_좋은점: (전체적인 소재 이미지의 색감, 구성, 비주얼 톤앤매너 장점 2문장)
+비주얼_아쉬운점: (시각적 차별성이나 레이아웃 면에서 아쉬운 점 1~2문장)
+비주얼_평점: (숫자만 1~5)
+
+종합_총평: (현재 이 브랜드의 전체 크리에이티브 집행 방향성에 대한 한줄 총평)
+종합_평점: (숫자만 1~5)
+"""
+
+_SCORE_LABEL_TO_KEY = {
+    "메시지_좋은점": "msg_good", "메시지_아쉬운점": "msg_bad", "메시지_평점": "msg_score",
+    "비주얼_좋은점": "vis_good", "비주얼_아쉬운점": "vis_bad", "비주얼_평점": "vis_score",
+    "종합_총평": "overall_desc", "종합_평점": "overall_score",
+}
+_SCORE_EMPTY = {k: "" for k in _SCORE_LABEL_TO_KEY.values()}
 
 
 def parse_labeled_text(text, label_to_key, empty_fields):
@@ -298,48 +309,19 @@ def parse_labeled_text(text, label_to_key, empty_fields):
     return fields
 
 
-def parse_structured_copy(text):
-    return parse_labeled_text(text, _LABEL_TO_KEY, {"brand": "", "message": "", "thumbnail": "", "cta": ""})
+def parse_integrated_report(text):
+    return parse_labeled_text(text, _SCORE_LABEL_TO_KEY, _SCORE_EMPTY)
 
 
-def structured_to_reference_text(fields):
-    return "\n".join(f"{FIELD_LABELS[k]}: {fields.get(k, '') or '없음'}" for k in FIELD_ORDER)
+def render_integrated_scorecard(report):
+    msg_desc = f"👍 **장점**: {report.get('msg_good', '')}\n👎 **아쉬운점**: {report.get('msg_bad', '')}"
+    vis_desc = f"👍 **장점**: {report.get('vis_good', '')}\n👎 **아쉬운점**: {report.get('vis_bad', '')}"
+    overall_desc = report.get('overall_desc', '')
 
-
-ANALYSIS_PROMPT = """당신은 퍼포먼스 마케팅 및 광고 크리에이티브 전문가입니다.
-첨부된 광고 소재 이미지와 구조화된 정보를 참고해서 분석해주세요.
-다른 설명 없이, 정확히 아래 형식으로만 답해주세요. 평점은 1~5 사이 숫자만 적어주세요.
-
-핵심메시지_설명: (이 소재가 전달하는 핵심 메시지/소구 포인트, 1~2문장)
-핵심메시지_평점: (숫자만)
-비주얼_설명: (색감, 레이아웃, 이미지 구성 특징, 1~2문장)
-비주얼_평점: (숫자만)
-타겟팅_설명: (예상 타겟 고객과 소구 방식, 1~2문장)
-타겟팅_평점: (숫자만)
-기타_설명: (후킹포인트, CTA, 톤앤매너 등 특이사항, 1~2문장)
-종합_평점: (숫자만, 전체 완성도)
-
-참고용 구조화 정보:
-{copy_text}"""
-
-_SCORE_LABEL_TO_KEY = {
-    "핵심메시지_설명": "message_desc", "핵심메시지_평점": "message_score",
-    "비주얼_설명": "visual_desc", "비주얼_평점": "visual_score",
-    "타겟팅_설명": "target_desc", "타겟팅_평점": "target_score",
-    "기타_설명": "other_desc", "종합_평점": "overall_score",
-}
-_SCORE_EMPTY = {k: "" for k in _SCORE_LABEL_TO_KEY.values()}
-
-
-def parse_scorecard(text): return parse_labeled_text(text, _SCORE_LABEL_TO_KEY, _SCORE_EMPTY)
-
-
-def render_scorecard(sc):
     cats = [
-        ("핵심 메시지", sc.get("message_desc", ""), sc.get("message_score", 0)),
-        ("비주얼", sc.get("visual_desc", ""), sc.get("visual_score", 0)),
-        ("타겟팅", sc.get("target_desc", ""), sc.get("target_score", 0)),
-        ("기타", sc.get("other_desc", ""), sc.get("overall_score", 0)),
+        ("메시지 전략", msg_desc, report.get("msg_score", 0)),
+        ("비주얼 / 디자인", vis_desc, report.get("vis_score", 0)),
+        ("종합 크리에이티브 평가", overall_desc, report.get("overall_score", 0)),
     ]
     html = '<div class="score-grid">'
     for label, desc, score in cats:
@@ -352,63 +334,50 @@ def render_scorecard(sc):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def scorecard_to_text(sc, name):
-    return (
-        f"[{name}]\n"
-        f"핵심 메시지({sc.get('message_score', '-')}점): {sc.get('message_desc', '')}\n"
-        f"비주얼({sc.get('visual_score', '-')}점): {sc.get('visual_desc', '')}\n"
-        f"타겟팅({sc.get('target_score', '-')}점): {sc.get('target_desc', '')}\n"
-        f"기타(종합 {sc.get('overall_score', '-')}점): {sc.get('other_desc', '')}"
-    )
-
-
-def analyze_material(image_bytes, ref_text, file_name="image.png"):
+def run_single_ocr(image_bytes, file_name="image.png"):
     mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
     image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    resp = client.models.generate_content(
-        model=MODEL, contents=[image_part, ANALYSIS_PROMPT.format(copy_text=ref_text)]
-    )
-    return parse_scorecard(resp.text)
+    resp = client.models.generate_content(model=MODEL, contents=[image_part, SINGLE_OCR_PROMPT])
+    return resp.text.strip()
 
 
-def run_structured_ocr(image_bytes, file_name="image.png"):
-    mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
-    image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    resp = client.models.generate_content(model=MODEL, contents=[image_part, STRUCTURED_OCR_PROMPT])
-    return parse_structured_copy(resp.text)
+def run_brand_integrated_analysis(brand_name, combined_messages, sample_images):
+    """소재 개별 분석이 아닌 브랜드 전체 통합 분석 수행"""
+    contents = [
+        BRAND_INTEGRATED_ANALYSIS_PROMPT.format(
+            brand_name=brand_name,
+            combined_messages=combined_messages
+        )
+    ]
+    # 최대 3개 이미지를 대표 레퍼런스로 전달
+    for fn, img_bytes in sample_images[:3]:
+        mime_type = "image/png" if fn.lower().endswith("png") else "image/jpeg"
+        contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+
+    resp = client.models.generate_content(model=MODEL, contents=contents)
+    return parse_integrated_report(resp.text)
 
 
 # ------------------------------------------------------------------
-# [수집 + 업로드 통합 UI - 4열 그리드 레이아웃 컴팩트 적용]
+# [통합 소재 UI - 4열 배치 + 자동 메인 메시지 OCR]
 # ------------------------------------------------------------------
-def render_material_section(prefix, on_complete):
-    tab1, tab2 = st.tabs(["📁 파일 직접 업로드", "🔗 메타 광고 라이브러리 URL 자동 수집"])
+def render_material_section(prefix, selected_comp, default_url, on_complete):
+    tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
     
     uploaded_items = []
-    
-    with tab1:
-        uploaded_files = st.file_uploader(
-            "광고 이미지 업로드 (다중 선택 가능 / PNG, JPG)",
-            type=["png", "jpg", "jpeg"],
-            accept_multiple_files=True,
-            key=f"{prefix}_uploader",
-        )
-        if uploaded_files:
-            for f in uploaded_files:
-                f.seek(0)
-                uploaded_items.append((f.name, f.read()))
 
-    with tab2:
+    with tab1:
+        # 자동 매핑된 URL 노출
         meta_url = st.text_input(
-            "메타 광고 라이브러리 페이지 URL 입력",
-            placeholder="https://www.facebook.com/ads/library/?...",
-            key=f"{prefix}_meta_url_input"
+            "메타 광고 라이브러리 페이지 URL",
+            value=default_url,
+            key=f"{prefix}_meta_url_input_{selected_comp}"
         )
         if st.button("🚀 전체 라이브 소재 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner("운영 중인 전체 광고 배너를 수집하고 있습니다..."):
+                with st.spinner("운영 중인 라이브 광고 배너를 수집 중입니다..."):
                     img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=30))
                     
                     if not img_urls:
@@ -422,19 +391,31 @@ def render_material_section(prefix, on_complete):
                                 st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
                             except Exception:
                                 pass
-                        st.success(f"메타 라이브러리에서 운영 중인 소재 {len(st.session_state[f'{prefix}_crawled_images'])}건을 수집했습니다!")
+                        st.success(f"[{selected_comp}] 운영 중인 소재 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
 
         if f"{prefix}_crawled_images" in st.session_state:
             uploaded_items.extend(st.session_state[f"{prefix}_crawled_images"])
+
+    with tab2:
+        uploaded_files = st.file_uploader(
+            "광고 이미지 업로드 (다중 선택 가능)",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key=f"{prefix}_uploader",
+        )
+        if uploaded_files:
+            for f in uploaded_files:
+                f.seek(0)
+                uploaded_items.append((f.name, f.read()))
 
     field_values_by_file = {}
     
     if uploaded_items:
         st.divider()
-        st.markdown(f"**수집된 소재 정보 ({len(uploaded_items)}건) - 한 줄 4개씩**")
-        st.caption("소재 이미지 아래에서 AI가 추출한 핵심 메인 메시지와 정보를 확인하고 수정할 수 있습니다.")
+        st.markdown(f"**수집된 소재 이미지 및 AI 자동 가로채기 메시지 ({len(uploaded_items)}건)**")
+        st.caption("AI가 각 이미지의 메인 카피 메시지를 자동으로 읽어옵니다. 필요 시 직접 수정할 수 있습니다.")
 
-        # 4열 그리드 배치 처리 (한 줄에 4개씩)
+        # 4열 그리드 배치
         cols_per_row = 4
         for i in range(0, len(uploaded_items), cols_per_row):
             row_items = uploaded_items[i:i + cols_per_row]
@@ -444,55 +425,57 @@ def render_material_section(prefix, on_complete):
                 with grid_cols[idx]:
                     file_key = f"{prefix}_{name}_{len(img_bytes)}"
 
+                    # 자동 메인 메시지 OCR
                     if client and file_key not in st.session_state.structured_copy:
                         try:
-                            with st.spinner("OCR 읽는 중..."):
-                                parsed = run_structured_ocr(img_bytes, file_name=name)
+                            with st.spinner("카피 읽는 중..."):
+                                msg_text = run_single_ocr(img_bytes, file_name=name)
                         except Exception:
-                            parsed = {"brand": "", "message": "", "thumbnail": "", "cta": ""}
-                        st.session_state.structured_copy[file_key] = parsed
+                            msg_text = ""
+                        st.session_state.structured_copy[file_key] = msg_text
 
-                    # 이미지 및 하단 컴팩트 텍스트 추출 입력 카드
                     st.image(img_bytes, use_container_width=True)
                     
-                    saved = st.session_state.structured_copy.get(
-                        file_key, {"brand": "", "message": "", "thumbnail": "", "cta": ""}
+                    saved_msg = st.session_state.structured_copy.get(file_key, "")
+                    
+                    # 오직 메인 메시지 칸만 컴팩트하게 노출
+                    user_msg = st.text_area(
+                        "메인 메시지",
+                        value=saved_msg,
+                        key=f"{file_key}_msg",
+                        height=70,
+                        label_visibility="visible"
                     )
                     
-                    fv = {}
-                    fv["brand"] = st.text_input("브랜드", value=saved.get("brand", ""), key=f"{file_key}_brand", label_visibility="visible")
-                    fv["message"] = st.text_area("메인 메시지 (키포인트)", value=saved.get("message", ""), key=f"{file_key}_msg", height=75, label_visibility="visible")
-                    fv["thumbnail"] = saved.get("thumbnail", "")
-                    fv["cta"] = st.text_input("CTA", value=saved.get("cta", ""), key=f"{file_key}_cta", label_visibility="visible")
-                    
-                    field_values_by_file[name] = fv
+                    field_values_by_file[name] = user_msg
 
         if not client:
-            st.info("Gemini API 키를 입력하면 정보가 자동으로 채워집니다.")
+            st.info("Gemini API 키를 입력하시면 이미지 내 메인 메시지가 자동으로 가로채어집니다.")
 
         st.divider()
-        if st.button("소재 분석 실행", type="primary", key=f"{prefix}_analyze_btn"):
+        if st.button(f"'{selected_comp}' 전체 브랜드 통합 분석 실행", type="primary", key=f"{prefix}_analyze_btn"):
             if not client:
                 st.error("Gemini API 키를 먼저 입력해주세요.")
             else:
-                results = []
-                progress = st.progress(0, text="소재 분석 진행 중...")
-                for idx, (name, img_bytes) in enumerate(uploaded_items):
-                    fv = field_values_by_file.get(name, {})
-                    ref_text = structured_to_reference_text(fv)
+                with st.spinner(f"'{selected_comp}' 브랜드 전체 광고 소재 통합 분석 중..."):
+                    all_messages = "\n".join([f"- {m}" for m in field_values_by_file.values() if m.strip()])
+                    if not all_messages:
+                        all_messages = "메시지 추출 실패 또는 없음"
+
                     try:
-                        sc = analyze_material(img_bytes, ref_text, file_name=name)
+                        report = run_brand_integrated_analysis(selected_comp, all_messages, uploaded_items)
+                        on_complete({
+                            "brand_name": selected_comp,
+                            "count": len(uploaded_items),
+                            "messages": all_messages,
+                            "report": report
+                        })
                     except Exception as e:
-                        sc = dict(_SCORE_EMPTY)
-                        sc["other_desc"] = f"분석 오류: {e}"
-                    results.append({"name": name, "structured": fv, "scorecard": sc})
-                    progress.progress((idx + 1) / len(uploaded_items), text=f"[{name}] 분석 완료")
-                progress.empty()
-                on_complete(results)
+                        st.error(f"통합 분석 중 오류 발생: {e}")
 
 
 # ------------------------------------------------------------------
-# 상단 헤더 & API 키 입력 영역
+# 상단 헤더 & API 키 입력
 # ------------------------------------------------------------------
 top_col1, top_col2 = st.columns([3, 1.3])
 with top_col1:
@@ -548,25 +531,24 @@ with st.sidebar:
     st.markdown('<div class="eyebrow">MENU</div>', unsafe_allow_html=True)
     nav = st.radio("메뉴", NAV_ITEMS, label_visibility="collapsed", key="nav_selector")
 
-# 세션 관리
 if "work" not in st.session_state: st.session_state.work = {}
 if segment not in st.session_state.work:
     st.session_state.work[segment] = {
         "own_analyses": [], "insight": "", "gap_analysis": "", "ideas": "",
-        "last_comp_results": [], "last_competitor": "",
+        "last_comp_result": None, "last_competitor": "",
     }
 W = st.session_state.work[segment]
 if "structured_copy" not in st.session_state: st.session_state.structured_copy = {}
 
 # ------------------------------------------------------------------
-# 01 · 경쟁사 소재 분석 (드롭다운 & 추가 버튼 수평 정렬)
+# 01 · 경쟁사 소재 분석 (드롭다운 & URL 자동 연동)
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 먼저 선택한 뒤, 파일 직접 업로드 또는 메타 라이브러리 URL로 자동 수집하세요.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다.")
 
     competitors = load_competitors()[segment]
     
-    # 드롭다운과 버튼 수평 수직 라인 맞춤 (4:1 컬럼 비율)
+    # 드롭다운과 + 새 경쟁사 추가 버튼 수평 줄 맞춤
     comp_col, add_col = st.columns([4, 1.2])
     with comp_col:
         selected_competitor = st.selectbox("분석할 경쟁사", competitors, key=f"{segment}_comp_select")
@@ -580,88 +562,81 @@ if nav == "01 · 경쟁사 소재 분석":
                     st.success(f"'{new_comp.strip()}' 추가되었습니다.")
                     st.rerun()
 
-    def _on_comp_complete(results):
-        W["last_comp_results"] = results
+    # 경쟁사에 맞는 URL 자동 매핑
+    auto_url = META_URL_MAP.get(selected_competitor, "")
+
+    def _on_comp_complete(res):
+        W["last_comp_result"] = res
         W["last_competitor"] = selected_competitor
-        for r in results:
-            save_profile_entry(segment, selected_competitor, {
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "name": r["name"],
-                "structured": r["structured"],
-                "scorecard": r["scorecard"],
-            })
-        st.success(f"'{selected_competitor}' 소재 {len(results)}건 분석 완료 → 02 탭 프로필에 저장되었습니다.")
+        save_profile_entry(segment, selected_competitor, {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "count": res["count"],
+            "messages": res["messages"],
+            "report": res["report"],
+        })
+        st.success(f"'{selected_competitor}' 전체 브랜드 통합 분석 완료 ➔ 02 탭 프로필에 저장되었습니다!")
 
-    render_material_section("comp", _on_comp_complete)
+    render_material_section("comp", selected_competitor, auto_url, _on_comp_complete)
 
-    if W["last_comp_results"]:
+    if W["last_comp_result"]:
         st.divider()
-        st.markdown(f"**방금 분석한 '{W['last_competitor']}' 소재 결과**")
-        for r in W["last_comp_results"]:
-            with st.expander(r["name"]):
-                render_scorecard(r["scorecard"])
+        st.markdown(f"### '{W['last_competitor']}' 브랜드 전체 크리에이티브 통합 분석 리포트")
+        render_integrated_scorecard(W["last_comp_result"]["report"])
 
 # ------------------------------------------------------------------
 # 02 · 경쟁사 프로필
 # ------------------------------------------------------------------
 elif nav == "02 · 경쟁사 프로필":
-    section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 소재가 경쟁사별로 누적 저장됩니다.")
+    section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 브랜드별 통합 크리에이티브 리포트가 누적됩니다.")
 
     profiles = load_all_profiles().get(segment, {})
     competitors = load_competitors()[segment]
 
     if not any(profiles.get(c) for c in competitors):
-        st.info("아직 분석된 경쟁사 소재가 없어요. 01 탭에서 소재를 분석하면 여기에 자동으로 쌓입니다.")
+        st.info("아직 분석된 경쟁사 리포트가 없어요. 01 탭에서 브랜드 분석을 실행해 주세요.")
     else:
         for comp in competitors:
             entries = profiles.get(comp, [])
             if not entries: continue
 
-            def _avg(key):
-                vals = []
-                for e in entries:
-                    try: vals.append(float(e["scorecard"].get(key, 0)))
-                    except (ValueError, TypeError): pass
-                return sum(vals) / len(vals) if vals else 0
-
+            latest = entries[0]
+            rep = latest.get("report", {})
             st.markdown(
                 f'<div class="comp-card"><div class="comp-name">{comp}</div>'
-                f'<div class="comp-meta">분석된 소재 {len(entries)}건 · '
-                f'평균 메시지 {stars(round(_avg("message_score")))} · '
-                f'평균 비주얼 {stars(round(_avg("visual_score")))} · '
-                f'평균 타겟팅 {stars(round(_avg("target_score")))}</div></div>',
+                f'<div class="comp-meta">누적 분석 {len(entries)}회 · 최근 수집 소재 {latest.get("count", 0)}건 · '
+                f'메시지 {stars(rep.get("msg_score", 0))} · '
+                f'비주얼 {stars(rep.get("vis_score", 0))} · '
+                f'종합 {stars(rep.get("overall_score", 0))}</div></div>',
                 unsafe_allow_html=True,
             )
-            with st.expander(f"{comp} — 소재별 세부 내역 ({len(entries)}건)"):
-                for e in entries:
-                    st.markdown(f"**{e['name']}** · {e.get('timestamp', '')}")
-                    render_scorecard(e["scorecard"])
-                    st.divider()
+            with st.expander(f"{comp} — 최신 통합 분석 리포트 세부보기 ({latest.get('timestamp', '')})"):
+                render_integrated_scorecard(rep)
+                st.markdown("**운영 중인 메인 메시지 모음:**")
+                st.caption(latest.get("messages", ""))
+                st.divider()
 
 # ------------------------------------------------------------------
 # 03 · 자사 소재 분석
 # ------------------------------------------------------------------
 elif nav == "03 · 자사 소재 분석":
-    section_header("03", f"{segment} 자사 광고 소재 분석", "지금 우리가 쓰고 있는 소재를 올려주세요.")
+    section_header("03", f"{segment} 자사 광고 소재 분석", "지금 우리가 쓰고 있는 브랜드 소재를 통합 분석합니다.")
 
-    def _on_own_complete(results):
-        W["own_analyses"] = results
-        st.success(f"자사 소재 {len(results)}건 분석 완료. 04 탭에서 경쟁사와 비교할 수 있어요.")
+    def _on_own_complete(res):
+        W["own_analyses"] = res
+        st.success("자사 브랜드 통합 소재 분석 완료! 04 탭에서 경쟁사와 비교할 수 있습니다.")
 
-    render_material_section("own", _on_own_complete)
+    render_material_section("own", "자사", "", _on_own_complete)
 
     if W["own_analyses"]:
         st.divider()
-        st.markdown("**자사 소재 분석 결과**")
-        for r in W["own_analyses"]:
-            with st.expander(r["name"]):
-                render_scorecard(r["scorecard"])
+        st.markdown("**자사 브랜드 통합 분석 리포트**")
+        render_integrated_scorecard(W["own_analyses"]["report"])
 
 # ------------------------------------------------------------------
-# 04 · 메시지 갭 분석
+# 04 · 메시지 갭 분석 & 위닝 포인트
 # ------------------------------------------------------------------
 elif nav == "04 · 메시지 갭 분석":
-    section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트", "경쟁사 전체와 자사 소재를 비교해 부족한 메시지를 찾아냅니다.")
+    section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트", "경쟁사 누적 프로필과 자사 브랜드 리포트를 비교해 부족한 메시지를 도출합니다.")
 
     profiles = load_all_profiles().get(segment, {})
     all_comp_entries = [(comp, e) for comp, es in profiles.items() for e in es]
@@ -670,14 +645,16 @@ elif nav == "04 · 메시지 갭 분석":
         st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해주세요.")
     else:
         if st.button("경쟁사 위닝 포인트 도출", type="primary", key="insight_btn"):
-            combined_analyses = "\n\n---\n\n".join(
-                scorecard_to_text(e["scorecard"], f"{comp} · {e['name']}") for comp, e in all_comp_entries
-            )
-            INSIGHT_PROMPT = """당신은 수석 브랜드 전략가입니다. 아래 경쟁사 소재 분석 리포트들을 검토하고,
-이 광고들이 공통으로 활용하고 있는 성공 패턴(위닝 포인트)을 3가지 핵심 키워드로 요약하고, 시장의 트렌드 인사이트를 도출해주세요.
+            comp_summary = ""
+            for comp, e in all_comp_entries:
+                rep = e.get("report", {})
+                comp_summary += f"[{comp}]\n메시지장점: {rep.get('msg_good','')}\n운영메시지: {e.get('messages','')}\n\n"
+
+            INSIGHT_PROMPT = """당신은 수석 브랜드 전략가입니다. 아래 경쟁사들의 최신 광고 메시지와 분석 리포트를 검토하고,
+경쟁사들이 공통으로 활용하고 있는 성공 패턴(위닝 포인트)을 3가지 핵심 키워드로 요약하고, 시장의 트렌드 인사이트를 도출해주세요.
 
 [경쟁사 분석 모음]
-{analyses}
+{comp_summary}
 
 작성 형식:
 ### 핵심 위닝 포인트 3가지
@@ -690,7 +667,7 @@ elif nav == "04 · 메시지 갭 분석":
 """
             with st.spinner("인사이트 도출 중..."):
                 try:
-                    resp = client.models.generate_content(model=MODEL, contents=[INSIGHT_PROMPT.format(analyses=combined_analyses)])
+                    resp = client.models.generate_content(model=MODEL, contents=[INSIGHT_PROMPT.format(comp_summary=comp_summary)])
                     W["insight"] = resp.text
                 except Exception as e: st.error(f"오류 발생: {e}")
 
@@ -703,20 +680,22 @@ elif nav == "04 · 메시지 갭 분석":
             st.info("03 탭에서 자사 소재 분석을 완료하면, 경쟁사 대비 부족한 메시지를 비교해드려요.")
         else:
             if st.button("메시지 갭 분석 실행", type="primary", key="gap_btn"):
-                comp_combined = "\n\n---\n\n".join(
-                    scorecard_to_text(e["scorecard"], f"{comp} · {e['name']}") for comp, e in all_comp_entries
-                )
-                own_combined = "\n\n---\n\n".join(
-                    scorecard_to_text(r["scorecard"], r["name"]) for r in W["own_analyses"]
-                )
-                GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 여러 경쟁사 광고 소재 분석과, 우리 브랜드 자체 소재 분석입니다.
+                comp_summary = ""
+                for comp, e in all_comp_entries:
+                    rep = e.get("report", {})
+                    comp_summary += f"[{comp}] {rep.get('msg_good','')}\n"
+                
+                own_rep = W["own_analyses"].get("report", {})
+                own_summary = f"[자사] 메시지장점: {own_rep.get('msg_good','')}\n아쉬운점: {own_rep.get('msg_bad','')}"
+
+                GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 경쟁사 그룹과 자사 브랜드 분석 정보입니다.
 두 그룹을 비교해서 아래 내용을 정리해주세요.
 
-[경쟁사 소재 분석 모음]
-{competitor}
+[경쟁사 그룹 요약]
+{comp_summary}
 
-[자사 소재 분석]
-{own}
+[자사 브랜드 요약]
+{own_summary}
 
 작성 형식:
 ### 경쟁사는 다루지만 우리 소재에는 부족한 메시지
@@ -732,7 +711,7 @@ elif nav == "04 · 메시지 갭 분석":
 """
                 with st.spinner("갭 분석 중..."):
                     try:
-                        resp = client.models.generate_content(model=MODEL, contents=[GAP_PROMPT.format(competitor=comp_combined, own=own_combined)])
+                        resp = client.models.generate_content(model=MODEL, contents=[GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)])
                         W["gap_analysis"] = resp.text
                     except Exception as e: st.error(f"오류 발생: {e}")
 
@@ -792,37 +771,29 @@ elif nav == "05 · 스토리보드 아이디어":
         st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해 주세요.")
     else:
         if st.button("위닝 스토리보드 아이디어 생성", type="primary"):
-            combined_analyses = "\n\n---\n\n".join(
-                scorecard_to_text(e["scorecard"], f"{comp} · {e['name']}") for comp, e in all_comp_entries
-            )
             gap_context = W["gap_analysis"] or "없음 (아직 메시지 갭 분석을 실행하지 않음)"
 
             STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
-그리고 **자사 디자인 메모리(가이드)**를 완벽하게 반영하여 경쟁사의 장점을 흡수하고 메시지 갭을 보완하되,
-우리 브랜드만의 정체성과 가이드를 철저히 지킨 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
+그리고 자사 디자인 메모리를 반영하여 차별화된 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
 
 [자사 브랜드 정보]
 - 브랜드/제품명: {brand_name}
 - 제품 설명: {brand_product}
 - 핵심 USP: {brand_usp}
 - 타겟 고객: {target_audience}
-- [중요] 자사 디자인 메모리 및 가이드 (반드시 준수): {design_memory}
+- 자사 디자인 가이드: {design_memory}
 
-[메시지 갭 분석 - 우리에게 부족한 메시지]
+[메시지 갭 분석]
 {gap_context}
 
-[경쟁사 분석 모음]
-{analyses}
-
-각 아이디어는 아래 구조의 **스토리보드 형식**으로 구체적으로 작성해주세요:
+각 아이디어는 아래 구조의 스토리보드 형식으로 작성해주세요:
 ### [아이디어 N] 한줄 컨셉 타이틀
 - **타겟구간 / 매체 소구 포인트**: 
 - **훅킹 카피 (오프닝 3초)**: 
-- **비주얼 구성안 (자사 디자인 메모리 반영 연출 기획)**: 
+- **비주얼 구성안 (연출 기획)**: 
 - **본문 설득 및 USP 소구 방식**: 
 - **CTA (행동 유도 문구)**: 
-- **경쟁사 대비 차별화 포인트**: 
-- **보완한 메시지 갭**: 
+- **차별화 포인트**: 
 """
             with st.spinner("스토리보드 기획안 작성 중..."):
                 try:
@@ -831,8 +802,8 @@ elif nav == "05 · 스토리보드 아이디어":
                         contents=[STORYBOARD_PROMPT.format(
                             brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
                             target_audience=target_audience,
-                            design_memory=brand_design_memory or "없음 (기본 톤앤매너 유지)",
-                            gap_context=gap_context, analyses=combined_analyses,
+                            design_memory=brand_design_memory or "기본 톤앤매너",
+                            gap_context=gap_context
                         )]
                     )
                     W["ideas"] = resp.text
@@ -844,7 +815,6 @@ elif nav == "05 · 스토리보드 아이디어":
                         "brand_product": brand_product,
                         "target_audience": target_audience,
                         "material_count": len(all_comp_entries),
-                        "own_material_count": len(W["own_analyses"]),
                         "insight": W["insight"],
                         "gap_analysis": W["gap_analysis"],
                         "ideas": W["ideas"],
@@ -883,8 +853,7 @@ elif nav == "06 · 히스토리":
             title = f"[{entry.get('segment', '-')}] {entry.get('brand_name', '(브랜드명 없음)')} · {entry.get('timestamp', '')}"
             with st.expander(title):
                 st.markdown(
-                    f'<div class="history-meta">경쟁사 소재 {entry.get("material_count", 0)}개 · '
-                    f'자사 소재 {entry.get("own_material_count", 0)}개 · '
+                    f'<div class="history-meta">분석 경쟁사 {entry.get("material_count", 0)}개 · '
                     f'타겟: {entry.get("target_audience", "-")}</div>',
                     unsafe_allow_html=True,
                 )
