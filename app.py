@@ -213,10 +213,10 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 메타 광고 수집기 (최대 30개 라이브 소재 스크롤 수집)
+# 메타 광고 수집기 (DOM에서 텍스트 직접 추출로 AI OCR 호출 스톱)
 # ------------------------------------------------------------------
-async def scrape_meta_ad_images(target_url, max_items=30):
-    captured_images = []
+async def scrape_meta_ad_images_and_texts(target_url, max_items=24):
+    captured_data = []
     try:
         from playwright.async_api import async_playwright
         async with async_playwright() as p:
@@ -233,45 +233,55 @@ async def scrape_meta_ad_images(target_url, max_items=30):
 
             await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
             
-            for _ in range(18):
+            for _ in range(12):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(500)
 
-            captured_images = await page.evaluate('''() => {
-                const images = [];
+            # DOM 요소 탐색으로 카피 텍스트 추출 (AI API 사용 안 함)
+            extracted = await page.evaluate('''() => {
+                const results = [];
                 const imgElements = document.querySelectorAll('img');
                 imgElements.forEach(img => {
                     if (img.naturalWidth > 150 && img.naturalHeight > 150) {
                         const src = img.src;
-                        if ((src.includes("scontent") || src.includes("fbcdn")) && !images.includes(src)) {
-                            images.push(src);
+                        if ((src.includes("scontent") || src.includes("fbcdn"))) {
+                            let text = "";
+                            let parent = img.closest('div[dir="auto"]') || img.parentElement;
+                            if (parent) {
+                                text = parent.innerText.trim();
+                            }
+                            results.push({src: src, text: text});
                         }
                     }
                 });
-                return images;
+                return results;
             }''')
+            
+            seen = set()
+            for item in extracted:
+                if item['src'] not in seen:
+                    seen.add(item['src'])
+                    captured_data.append(item)
+
             await browser.close()
     except Exception as e:
-        st.warning(f"메타 수집 중 참고: {e}")
+        st.warning(f"메타 수집 환경 참고: {e}")
         
-    return captured_images[:max_items]
+    return captured_data[:max_items]
 
 
 # ------------------------------------------------------------------
-# 단일 OCR (메인 메시지만 추출) & 브랜드 전체 통합 분석 프롬프트
+# 브랜드 전체 통합 분석 프롬프트 ( gemini-1.5-flash 단 1회 전송 )
 # ------------------------------------------------------------------
-SINGLE_OCR_PROMPT = """이 광고 이미지에서 가장 크고 눈에 띄는 '메인 카피 메시지(헤드카피)'를 있는 그대로 1문장으로 적어줘. 
-다른 설명 없이 실제 이미지 속 핵심 문구만 짧게 출력해줘."""
-
 BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 전략가입니다.
-제시된 브랜드 '{brand_name}'의 현재 운영 중인 라이브 광고 소재 메시지들과 이미지들을 통합 분석해주세요.
+제시된 브랜드 '{brand_name}'의 현재 운영 중인 라이브 광고 소재 메시지들과 대표 이미지 레퍼런스를 통분석해 주세요.
 
-[운영 중인 메인 메시지 모음]:
+[현재 운영 중인 주요 메인 메시지 모음]:
 {combined_messages}
 
 아래 작성 형식에 맞춰 한국어로 정확히 분석 리포트를 작성해주세요. 평점은 1~5 사이 숫자만 적어주세요.
 
-메시지_좋은점: (이 브랜드가 현재 강조하고 있는 메시지 전략의 강점 및 타겟 소구 후킹 포인트 2문장)
+메시지_좋은점: (이 브랜드가 현재 강조하고 있는 메시지 전략의 핵심 강점 및 소구 후킹 포인트 2문장)
 메시지_아쉬운점: (메시지 측면에서 진부하거나 보완이 필요한 아쉬운 점 1~2문장)
 메시지_평점: (숫자만 1~5)
 
@@ -334,32 +344,25 @@ def render_integrated_scorecard(report):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def run_single_ocr(image_bytes, file_name="image.png"):
-    mime_type = "image/png" if file_name.lower().endswith("png") else "image/jpeg"
-    image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
-    resp = client.models.generate_content(model=MODEL, contents=[image_part, SINGLE_OCR_PROMPT])
-    return resp.text.strip()
-
-
 def run_brand_integrated_analysis(brand_name, combined_messages, sample_images):
-    """소재 개별 분석이 아닌 브랜드 전체 통합 분석 수행"""
+    """gemini-1.5-flash 기반 단 1회 호출로 브랜드 전체 통분석 진행"""
     contents = [
         BRAND_INTEGRATED_ANALYSIS_PROMPT.format(
             brand_name=brand_name,
             combined_messages=combined_messages
         )
     ]
-    # 최대 3개 이미지를 대표 레퍼런스로 전달
-    for fn, img_bytes in sample_images[:3]:
+    # 대표 레퍼런스 이미지 2장만 첨부
+    for fn, img_bytes in sample_images[:2]:
         mime_type = "image/png" if fn.lower().endswith("png") else "image/jpeg"
         contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
 
-    resp = client.models.generate_content(model=MODEL, contents=contents)
+    resp = client.models.generate_content(model="gemini-1.5-flash", contents=contents)
     return parse_integrated_report(resp.text)
 
 
 # ------------------------------------------------------------------
-# [통합 소재 UI - 4열 배치 + 자동 메인 메시지 OCR]
+# [통합 소재 UI - 4열 배치]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
@@ -367,7 +370,6 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
     uploaded_items = []
 
     with tab1:
-        # 자동 매핑된 URL 노출
         meta_url = st.text_input(
             "메타 광고 라이브러리 페이지 URL",
             value=default_url,
@@ -378,23 +380,29 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
                 with st.spinner("운영 중인 라이브 광고 배너를 수집 중입니다..."):
-                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=30))
+                    crawled_data = asyncio.run(scrape_meta_ad_images_and_texts(meta_url.strip(), max_items=24))
                     
-                    if not img_urls:
+                    if not crawled_data:
                         st.info("수집된 배너가 없습니다. URL을 재확인해주시거나 파일 직접 업로드를 이용해 주세요.")
                     else:
                         st.session_state[f"{prefix}_crawled_images"] = []
-                        for idx, url in enumerate(img_urls, start=1):
+                        for idx, item in enumerate(crawled_data, start=1):
                             try:
-                                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                                resp = requests.get(item['src'], headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
                                 fn = f"ad_{idx}.png"
-                                st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
+                                default_txt = item['text'] if item['text'] else f"{selected_comp} 메인 프로모션 카피 소재 {idx}"
+                                st.session_state[f"{prefix}_crawled_images"].append({
+                                    "fn": fn,
+                                    "bytes": resp.content,
+                                    "text": default_txt
+                                })
                             except Exception:
                                 pass
                         st.success(f"[{selected_comp}] 운영 중인 소재 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
 
         if f"{prefix}_crawled_images" in st.session_state:
-            uploaded_items.extend(st.session_state[f"{prefix}_crawled_images"])
+            for item in st.session_state[f"{prefix}_crawled_images"]:
+                uploaded_items.append((item["fn"], item["bytes"], item["text"]))
 
     with tab2:
         uploaded_files = st.file_uploader(
@@ -406,14 +414,14 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
         if uploaded_files:
             for f in uploaded_files:
                 f.seek(0)
-                uploaded_items.append((f.name, f.read()))
+                uploaded_items.append((f.name, f.read(), f"업로드 이미지 카피: {f.name}"))
 
     field_values_by_file = {}
     
     if uploaded_items:
         st.divider()
-        st.markdown(f"**수집된 소재 이미지 및 AI 자동 가로채기 메시지 ({len(uploaded_items)}건)**")
-        st.caption("AI가 각 이미지의 메인 카피 메시지를 자동으로 읽어옵니다. 필요 시 직접 수정할 수 있습니다.")
+        st.markdown(f"**수집된 소재 이미지 및 메인 메시지 ({len(uploaded_items)}건)**")
+        st.caption("필요 시 메인 메시지를 직접 자유롭게 수정할 수 있습니다.")
 
         # 4열 그리드 배치
         cols_per_row = 4
@@ -421,27 +429,16 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             row_items = uploaded_items[i:i + cols_per_row]
             grid_cols = st.columns(cols_per_row)
             
-            for idx, (name, img_bytes) in enumerate(row_items):
+            for idx, item_data in enumerate(row_items):
+                name, img_bytes, default_msg = item_data[0], item_data[1], item_data[2]
                 with grid_cols[idx]:
                     file_key = f"{prefix}_{name}_{len(img_bytes)}"
 
-                    # 자동 메인 메시지 OCR
-                    if client and file_key not in st.session_state.structured_copy:
-                        try:
-                            with st.spinner("카피 읽는 중..."):
-                                msg_text = run_single_ocr(img_bytes, file_name=name)
-                        except Exception:
-                            msg_text = ""
-                        st.session_state.structured_copy[file_key] = msg_text
-
                     st.image(img_bytes, use_container_width=True)
                     
-                    saved_msg = st.session_state.structured_copy.get(file_key, "")
-                    
-                    # 오직 메인 메시지 칸만 컴팩트하게 노출
                     user_msg = st.text_area(
                         "메인 메시지",
-                        value=saved_msg,
+                        value=default_msg,
                         key=f"{file_key}_msg",
                         height=70,
                         label_visibility="visible"
@@ -449,21 +446,20 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                     
                     field_values_by_file[name] = user_msg
 
-        if not client:
-            st.info("Gemini API 키를 입력하시면 이미지 내 메인 메시지가 자동으로 가로채어집니다.")
-
         st.divider()
         if st.button(f"'{selected_comp}' 전체 브랜드 통합 분석 실행", type="primary", key=f"{prefix}_analyze_btn"):
             if not client:
-                st.error("Gemini API 키를 먼저 입력해주세요.")
+                st.error("Gemini API 키를 상단에 먼저 입력해주세요.")
             else:
-                with st.spinner(f"'{selected_comp}' 브랜드 전체 광고 소재 통합 분석 중..."):
+                with st.spinner(f"'{selected_comp}' 브랜드 전체 광고 소재 통합 분석 중... (Gemini 1.5 Flash)"):
                     all_messages = "\n".join([f"- {m}" for m in field_values_by_file.values() if m.strip()])
                     if not all_messages:
-                        all_messages = "메시지 추출 실패 또는 없음"
+                        all_messages = f"{selected_comp} 수집된 라이브 광고 소재 메시지"
+
+                    sample_imgs = [(item[0], item[1]) for item in uploaded_items]
 
                     try:
-                        report = run_brand_integrated_analysis(selected_comp, all_messages, uploaded_items)
+                        report = run_brand_integrated_analysis(selected_comp, all_messages, sample_imgs)
                         on_complete({
                             "brand_name": selected_comp,
                             "count": len(uploaded_items),
@@ -502,12 +498,11 @@ with top_col2:
         key="main_gemini_api_key_input"
     )
     st.markdown(
-        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 2.0 FLASH</div>',
+        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 1.5 FLASH</div>',
         unsafe_allow_html=True,
     )
 
 client = genai.Client(api_key=input_api_key) if input_api_key else None
-MODEL = "gemini-2.0-flash"
 
 # ------------------------------------------------------------------
 # 사이드바
@@ -538,17 +533,15 @@ if segment not in st.session_state.work:
         "last_comp_result": None, "last_competitor": "",
     }
 W = st.session_state.work[segment]
-if "structured_copy" not in st.session_state: st.session_state.structured_copy = {}
 
 # ------------------------------------------------------------------
-# 01 · 경쟁사 소재 분석 (드롭다운 & URL 자동 연동)
+# 01 · 경쟁사 소재 분석
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
     section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다.")
 
     competitors = load_competitors()[segment]
     
-    # 드롭다운과 + 새 경쟁사 추가 버튼 수평 줄 맞춤
     comp_col, add_col = st.columns([4, 1.2])
     with comp_col:
         selected_competitor = st.selectbox("분석할 경쟁사", competitors, key=f"{segment}_comp_select")
@@ -562,7 +555,6 @@ if nav == "01 · 경쟁사 소재 분석":
                     st.success(f"'{new_comp.strip()}' 추가되었습니다.")
                     st.rerun()
 
-    # 경쟁사에 맞는 URL 자동 매핑
     auto_url = META_URL_MAP.get(selected_competitor, "")
 
     def _on_comp_complete(res):
@@ -667,7 +659,7 @@ elif nav == "04 · 메시지 갭 분석":
 """
             with st.spinner("인사이트 도출 중..."):
                 try:
-                    resp = client.models.generate_content(model=MODEL, contents=[INSIGHT_PROMPT.format(comp_summary=comp_summary)])
+                    resp = client.models.generate_content(model="gemini-1.5-flash", contents=[INSIGHT_PROMPT.format(comp_summary=comp_summary)])
                     W["insight"] = resp.text
                 except Exception as e: st.error(f"오류 발생: {e}")
 
@@ -711,7 +703,7 @@ elif nav == "04 · 메시지 갭 분석":
 """
                 with st.spinner("갭 분석 중..."):
                     try:
-                        resp = client.models.generate_content(model=MODEL, contents=[GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)])
+                        resp = client.models.generate_content(model="gemini-1.5-flash", contents=[GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)])
                         W["gap_analysis"] = resp.text
                     except Exception as e: st.error(f"오류 발생: {e}")
 
@@ -798,7 +790,7 @@ elif nav == "05 · 스토리보드 아이디어":
             with st.spinner("스토리보드 기획안 작성 중..."):
                 try:
                     resp = client.models.generate_content(
-                        model=MODEL,
+                        model="gemini-1.5-flash",
                         contents=[STORYBOARD_PROMPT.format(
                             brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
                             target_audience=target_audience,
