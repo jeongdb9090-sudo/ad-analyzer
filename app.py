@@ -1,34 +1,30 @@
-import subprocess
-import sys
-import streamlit as st
-
-# Streamlit Cloud 서버 구동 시 Playwright 크롬 브라우저 자동 다운로드
-@st.cache_resource
-def install_playwright_browsers():
-    try:
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-    except Exception as e:
-        print(f"Playwright browser install log: {e}")
-
-install_playwright_browsers()
-
-
-
-
 import asyncio
 import io
 import json
 import os
+import subprocess
+import sys
 from datetime import datetime
 import requests
-from PIL import Image
-
 import streamlit as st
+from PIL import Image
 from google import genai
 from google.genai import types
 
 # ------------------------------------------------------------------
-# 기본 설정 및 톤앤매너 디자인 CSS (컨테이너/입력창 색상 완벽 통일)
+# Streamlit Cloud 서버 구동 시 Playwright 크롬 브라우저 자동 다운로드
+# ------------------------------------------------------------------
+@st.cache_resource
+def install_playwright_browsers():
+    try:
+        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+    except Exception:
+        pass
+
+install_playwright_browsers()
+
+# ------------------------------------------------------------------
+# 기본 설정 및 톤앤매너 디자인 CSS
 # ------------------------------------------------------------------
 st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
 
@@ -48,7 +44,7 @@ st.markdown("""
     --teal: #0D9488;
 }
 
-/* 기본 전체 배경 및 폰트 색상 */
+/* 기본 글자색 및 배경 */
 html, body, [class*="css"], .stMarkdown, p, span, label, div {
     font-family: 'Inter', sans-serif;
     color: var(--ink) !important;
@@ -79,13 +75,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 [data-testid="stSidebar"] * { color: var(--ink) !important; }
 
-/* 버튼 스타일 */
-.stButton > button { border-radius: 7px; font-weight: 600; border: 1px solid var(--border); background-color: #FFFFFF !important; color: var(--ink) !important; }
+/* 버튼 및 셀렉트박스 높이 수평 맞춤 */
+.stButton > button { border-radius: 8px; font-weight: 600; border: 1px solid var(--border); background-color: #FFFFFF !important; color: var(--ink) !important; }
 .stButton > button[kind="primary"] { background-color: var(--primary) !important; color: #FFFFFF !important; border: none; }
 .stButton > button[kind="primary"] * { color: #FFFFFF !important; }
 .stButton > button[kind="primary"]:hover { background-color: #21245A !important; }
 
-/* 텍스트 입력창, 셀렉트박스 및 드롭다운 배경 및 글자색 일치 (어두운 회색 제거) */
+/* 팝오버 및 셀렉트 박스 수평 정렬용 레이블 마진 조절 */
+.align-bottom-btn { margin-top: 28px; }
+
 .stTextInput input, .stTextArea textarea, div[data-baseweb="select"] > div {
     background-color: #FFFFFF !important;
     color: var(--ink) !important;
@@ -93,29 +91,27 @@ h1, h2, h3, h4, h5, h6 {
     border: 1px solid var(--border) !important;
 }
 
-/* 파일 업로더 영역 이질감 없게 배경 정리 */
-[data-testid="stFileUploader"], [data-testid="stFileUploader"] section {
+/* 4열 그리드 이미지 및 필드 카드 컴팩트화 */
+.ad-card-box {
     background-color: #FFFFFF !important;
-    border: 1px dashed var(--border) !important;
+    border: 1px solid var(--border) !important;
     border-radius: 10px !important;
+    padding: 10px !important;
+    margin-bottom: 16px !important;
 }
-[data-testid="stFileUploader"] * {
-    color: var(--ink) !important;
+.ad-card-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--primary) !important;
+    margin-bottom: 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* 탭 스타일 */
 .stTabs [data-baseweb="tab-list"] { gap: 4px; border-bottom: 1px solid var(--border); flex-wrap: wrap; background-color: transparent !important; }
 .stTabs [data-baseweb="tab"] { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px; padding: 9px 12px; border-radius: 7px 7px 0 0; color: var(--muted) !important; }
 .stTabs [aria-selected="true"] { color: var(--primary) !important; border-bottom: 2px solid var(--primary) !important; font-weight: 700; }
-
-/* 카드 및 컨테이너 */
-[data-testid="stImage"] img { border-radius: 8px; border: 1px solid var(--border); }
-div[data-testid="stVerticalBlockBorderWrapper"] { border-radius: 10px !important; border: 1px solid var(--border) !important; background-color: #FFFFFF !important; }
-
-[data-testid="stExpander"] { border: 1px solid var(--border) !important; border-radius: 8px !important; background-color: #FFFFFF !important; }
-[data-testid="stExpander"] * { color: var(--ink) !important; }
-
-.field-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.06em; color: var(--muted) !important; margin: 6px 0 2px 0; text-transform: uppercase; font-weight: 600; }
 
 .score-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin: 10px 0; }
 .score-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background-color: #F8F8F5 !important; }
@@ -223,9 +219,9 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# Playwright 기반 메타 광고 수집기
+# 메타 광고 수집기 (전체 라이브 소재 수집으로 스크롤 확장 - 최대 30개)
 # ------------------------------------------------------------------
-async def scrape_meta_ad_images(target_url, max_items=5):
+async def scrape_meta_ad_images(target_url, max_items=30):
     captured_images = []
     try:
         from playwright.async_api import async_playwright
@@ -241,10 +237,12 @@ async def scrape_meta_ad_images(target_url, max_items=5):
             page = await context.new_page()
             await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
 
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=25000)
-            for _ in range(5):
-                await page.mouse.wheel(0, 1500)
-                await page.wait_for_timeout(600)
+            await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
+            
+            # 라이브 소재를 다수 불러오기 위해 18번 연속 스크롤
+            for _ in range(18):
+                await page.mouse.wheel(0, 1800)
+                await page.wait_for_timeout(500)
 
             captured_images = await page.evaluate('''() => {
                 const images = [];
@@ -261,7 +259,7 @@ async def scrape_meta_ad_images(target_url, max_items=5):
             }''')
             await browser.close()
     except Exception as e:
-        st.warning(f"메타 수집 중 참조: {e}")
+        st.warning(f"메타 수집 환경 참고: {e}")
         
     return captured_images[:max_items]
 
@@ -274,7 +272,7 @@ STRUCTURED_OCR_PROMPT = """이 광고 이미지를 보고 아래 4가지 항목�
 
 브랜드명: (이미지 안에 보이는 브랜드/제품명. 로고나 텍스트로 적힌 것만)
 메인 메시지: (가장 크고 눈에 띄는 핵심 카피 문구. 실제 적힌 텍스트 그대로)
-썸네일: (이미지의 비주얼을 아주 간단히, 한 줄로 요약 - 예: "운동하는 여성 이미지", "제품 클로즈업 사진")
+썸네일: (이미지의 비주얼을 아주 간단히, 한 줄로 요약)
 CTA: (구매하기, 지금 다운로드 등 행동 유도 문구)"""
 
 FIELD_LABELS = {"brand": "브랜드명", "message": "메인 메시지", "thumbnail": "썸네일", "cta": "CTA"}
@@ -381,7 +379,7 @@ def run_structured_ocr(image_bytes, file_name="image.png"):
 
 
 # ------------------------------------------------------------------
-# [수집 + 업로드 통합 UI]
+# [수집 + 업로드 통합 UI - 4열 그리드 레이아웃 컴팩트 적용]
 # ------------------------------------------------------------------
 def render_material_section(prefix, on_complete):
     tab1, tab2 = st.tabs(["📁 파일 직접 업로드", "🔗 메타 광고 라이브러리 URL 자동 수집"])
@@ -406,12 +404,12 @@ def render_material_section(prefix, on_complete):
             placeholder="https://www.facebook.com/ads/library/?...",
             key=f"{prefix}_meta_url_input"
         )
-        if st.button("🚀 메타 라이브러리 소재 자동 수집", key=f"{prefix}_crawl_btn", type="primary"):
+        if st.button("🚀 전체 라이브 소재 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner("Playwright 크롤러로 배너 이미지를 수집 중입니다..."):
-                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=5))
+                with st.spinner("운영 중인 전체 광고 배너를 수집하고 있습니다..."):
+                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=30))
                     
                     if not img_urls:
                         st.info("수집된 배너가 없습니다. URL을 재확인해주시거나 파일 직접 업로드를 이용해 주세요.")
@@ -420,11 +418,11 @@ def render_material_section(prefix, on_complete):
                         for idx, url in enumerate(img_urls, start=1):
                             try:
                                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                                fn = f"meta_crawled_{idx}.png"
+                                fn = f"ad_{idx}.png"
                                 st.session_state[f"{prefix}_crawled_images"].append((fn, resp.content))
                             except Exception:
                                 pass
-                        st.success(f"메타 라이브러리에서 광고 배너 {len(st.session_state[f'{prefix}_crawled_images'])}건 수집 완료!")
+                        st.success(f"메타 라이브러리에서 운영 중인 소재 {len(st.session_state[f'{prefix}_crawled_images'])}건을 수집했습니다!")
 
         if f"{prefix}_crawled_images" in st.session_state:
             uploaded_items.extend(st.session_state[f"{prefix}_crawled_images"])
@@ -433,38 +431,40 @@ def render_material_section(prefix, on_complete):
     
     if uploaded_items:
         st.divider()
-        st.markdown("**인식된 소재 정보 확인 · 수정**")
-        st.caption("AI가 브랜드명 / 메인 메시지 / 썸네일 / CTA를 항목별로 자동 인식합니다. 틀린 부분은 직접 고쳐주세요.")
+        st.markdown(f"**수집된 소재 정보 ({len(uploaded_items)}건) - 한 줄 4개씩**")
+        st.caption("소재 이미지 아래에서 AI가 추출한 핵심 메인 메시지와 정보를 확인하고 수정할 수 있습니다.")
 
-        for name, img_bytes in uploaded_items:
-            file_key = f"{prefix}_{name}_{len(img_bytes)}"
+        # 4열 그리드 배치 처리 (한 줄에 4개씩)
+        cols_per_row = 4
+        for i in range(0, len(uploaded_items), cols_per_row):
+            row_items = uploaded_items[i:i + cols_per_row]
+            grid_cols = st.columns(cols_per_row)
+            
+            for idx, (name, img_bytes) in enumerate(row_items):
+                with grid_cols[idx]:
+                    file_key = f"{prefix}_{name}_{len(img_bytes)}"
 
-            if client and file_key not in st.session_state.structured_copy:
-                try:
-                    with st.spinner(f"'{name}' AI OCR 읽는 중..."):
-                        parsed = run_structured_ocr(img_bytes, file_name=name)
-                except Exception:
-                    parsed = {"brand": "", "message": "", "thumbnail": "", "cta": ""}
-                st.session_state.structured_copy[file_key] = parsed
+                    if client and file_key not in st.session_state.structured_copy:
+                        try:
+                            with st.spinner("OCR 읽는 중..."):
+                                parsed = run_structured_ocr(img_bytes, file_name=name)
+                        except Exception:
+                            parsed = {"brand": "", "message": "", "thumbnail": "", "cta": ""}
+                        st.session_state.structured_copy[file_key] = parsed
 
-            with st.container(border=True):
-                card_cols = st.columns([1, 2])
-                with card_cols[0]:
+                    # 이미지 및 하단 컴팩트 텍스트 추출 입력 카드
                     st.image(img_bytes, use_container_width=True)
-                with card_cols[1]:
+                    
                     saved = st.session_state.structured_copy.get(
                         file_key, {"brand": "", "message": "", "thumbnail": "", "cta": ""}
                     )
+                    
                     fv = {}
-                    for fkey in FIELD_ORDER:
-                        widget_key = f"{file_key}_{fkey}"
-                        if widget_key not in st.session_state:
-                            st.session_state[widget_key] = saved.get(fkey, "")
-                        st.markdown(f'<div class="field-label">{FIELD_LABELS[fkey]}</div>', unsafe_allow_html=True)
-                        if fkey in ("message", "thumbnail"):
-                            fv[fkey] = st.text_area(FIELD_LABELS[fkey], key=widget_key, height=60, label_visibility="collapsed")
-                        else:
-                            fv[fkey] = st.text_input(FIELD_LABELS[fkey], key=widget_key, label_visibility="collapsed")
+                    fv["brand"] = st.text_input("브랜드", value=saved.get("brand", ""), key=f"{file_key}_brand", label_visibility="visible")
+                    fv["message"] = st.text_area("메인 메시지 (키포인트)", value=saved.get("message", ""), key=f"{file_key}_msg", height=75, label_visibility="visible")
+                    fv["thumbnail"] = saved.get("thumbnail", "")
+                    fv["cta"] = st.text_input("CTA", value=saved.get("cta", ""), key=f"{file_key}_cta", label_visibility="visible")
+                    
                     field_values_by_file[name] = fv
 
         if not client:
@@ -492,7 +492,7 @@ def render_material_section(prefix, on_complete):
 
 
 # ------------------------------------------------------------------
-# 상단 헤더 & API 키 입력 영역 (시인성 레이블 가공)
+# 상단 헤더 & API 키 입력 영역
 # ------------------------------------------------------------------
 top_col1, top_col2 = st.columns([3, 1.3])
 with top_col1:
@@ -511,7 +511,6 @@ with top_col2:
             default_key = st.secrets["GEMINI_API_KEY"]
     except Exception: pass
     
-    # API 키 명확한 텍스트 라벨 부여
     input_api_key = st.text_input(
         "Gemini API Key 입력",
         value=default_key,
@@ -560,19 +559,22 @@ W = st.session_state.work[segment]
 if "structured_copy" not in st.session_state: st.session_state.structured_copy = {}
 
 # ------------------------------------------------------------------
-# 01 · 경쟁사 소재 분석
+# 01 · 경쟁사 소재 분석 (드롭다운 & 추가 버튼 수평 정렬)
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
     section_header("01", f"{segment} 경쟁사 광고 소재 분석", "분석할 경쟁사를 먼저 선택한 뒤, 파일 직접 업로드 또는 메타 라이브러리 URL로 자동 수집하세요.")
 
     competitors = load_competitors()[segment]
-    comp_col, add_col = st.columns([2, 1])
+    
+    # 드롭다운과 버튼 수평 수직 라인 맞춤 (4:1 컬럼 비율)
+    comp_col, add_col = st.columns([4, 1.2])
     with comp_col:
         selected_competitor = st.selectbox("분석할 경쟁사", competitors, key=f"{segment}_comp_select")
     with add_col:
-        with st.popover("+ 새 경쟁사 추가"):
+        st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
+        with st.popover("+ 새 경쟁사 추가", use_container_width=True):
             new_comp = st.text_input("경쟁사명", key=f"{segment}_new_comp_input")
-            if st.button("추가", key=f"{segment}_new_comp_btn"):
+            if st.button("추가", key=f"{segment}_new_comp_btn", use_container_width=True):
                 if new_comp.strip():
                     add_competitor(segment, new_comp.strip())
                     st.success(f"'{new_comp.strip()}' 추가되었습니다.")
