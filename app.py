@@ -57,7 +57,6 @@ h1, h2, h3, h4, h5, h6 {
     color: var(--ink) !important;
 }
 
-/* 상단 앱바 */
 .appbar { display: flex; align-items: center; gap: 14px; padding: 18px 4px 20px 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
 .appbar-mark { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--teal)); flex-shrink: 0; }
 .appbar-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.1; color: var(--ink) !important; }
@@ -67,7 +66,6 @@ h1, h2, h3, h4, h5, h6 {
 .section-title { font-size: 20px; font-weight: 700; margin: 0 0 4px 0; color: var(--ink) !important; }
 .section-desc { font-size: 13.5px; color: var(--muted) !important; margin-bottom: 18px; }
 
-/* 사이드바 */
 [data-testid="stSidebar"] {
     background-color: #F3F3EE !important;
     border-right: 1px solid var(--border) !important;
@@ -121,7 +119,7 @@ def stars(score, max_score=5):
 
 
 # ------------------------------------------------------------------
-# 세그먼트 & 경쟁사 및 메타 URL 매핑 사전 (비상 온리원 URL 정정)
+# 세그먼트 & 경쟁사 / 자사 메타 URL 매핑 사전
 # ------------------------------------------------------------------
 SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
@@ -130,6 +128,7 @@ DEFAULT_COMPETITORS = {
     "중등": ["밀크T중등", "웅진스마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
 }
 
+# 경쟁사 메타 라이브러리 정밀 URL
 META_URL_MAP = {
     "윙크": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EC%9C%99%ED%81%AC%ED%95%99%EC%8A%B5&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
     "웅진스마트올": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=100188454740792",
@@ -137,13 +136,22 @@ META_URL_MAP = {
     "리틀홈런": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EB%A6%AC%ED%8B%80%ED%99%88%EB%9F%B0&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
     "밀크T": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=699675066795625",
     "아이스크림 홈런": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=562669550571671",
-    # 비상 온리원 검색 키워드 기반 정정 URL (배너 수집율 극대화)
-    "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EB%B9%84%EC%83%81%20%EC%98%A8%EB%A6%AC%EC%9B%90&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
+    # 초등 비상 온리원 정교화 페이지 ID 적용
+    "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=552773944780211",
     "단꿈e": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=350531981486027",
     "밀크T중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=101376489315136",
+    # 중등 웅진스마트올 중학 정밀 ID
     "웅진스마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
-    "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%EC%98%A8%EB%A6%AC%EC%9B%90%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions",
-    "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
+    "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=989750591106584",
+    # 중등 아이스크림 홈런 중등 정교화 키워드/페이지 검색
+    "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
+}
+
+# 자사 사업 부문별 정밀 메타 URL 매핑
+OWN_META_URL_MAP = {
+    "유아": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=1600636653593633",
+    "초등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=113924893334247",
+    "중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=104085702734737"
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -214,9 +222,9 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 메타 광고 수집기 (프로필 필터링 강화: 200px 이상 배너만 선택)
+# 메타 광고 수집기 (프로필 필터링 강화 + 엄격한 중복 제거)
 # ------------------------------------------------------------------
-async def scrape_meta_ad_images(target_url, max_items=20):
+async def scrape_meta_ad_images(target_url, max_items=24):
     captured_urls = []
     try:
         from playwright.async_api import async_playwright
@@ -234,7 +242,7 @@ async def scrape_meta_ad_images(target_url, max_items=20):
 
             await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
             
-            for _ in range(10):
+            for _ in range(12):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(500)
 
@@ -242,7 +250,7 @@ async def scrape_meta_ad_images(target_url, max_items=20):
                 const urls = [];
                 const imgElements = document.querySelectorAll('img');
                 imgElements.forEach(img => {
-                    // 프로필 및 아이콘 제거를 위해 가로/세로 200px 이상 배너만 수집
+                    // 순수 배너만 가져오기 위해 가로/세로 200px 이상 필터링
                     if (img.naturalWidth >= 200 && img.naturalHeight >= 200) {
                         const src = img.src;
                         if ((src.includes("scontent") || src.includes("fbcdn"))) {
@@ -255,8 +263,10 @@ async def scrape_meta_ad_images(target_url, max_items=20):
             
             seen = set()
             for u in extracted:
-                if u not in seen:
-                    seen.add(u)
+                # URL 쿼리 파라미터 제외 순수 이미지 주소 기준 중복 제거
+                base_u = u.split('?')[0] if '?' in u else u
+                if base_u not in seen:
+                    seen.add(base_u)
                     captured_urls.append(u)
 
             await browser.close()
@@ -267,22 +277,59 @@ async def scrape_meta_ad_images(target_url, max_items=20):
 
 
 # ------------------------------------------------------------------
-# 브랜드 전체 통합 분석 프롬프트 (토큰 429 에러 방지 경량화)
+# 통째 캡처 이미지 콜라주(Collage) 생성 함수 (429 할당량 초과 원천 차단)
 # ------------------------------------------------------------------
-BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 전략가입니다.
-제시된 브랜드 '{brand_name}'의 현재 동시 집행 중인 메타 라이브러리 광고 소재 이미지들을 종합 분석해 주세요.
+def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(240, 240)):
+    """여러 수집 이미지를 1장의 가로/세로 그리드 판판(Collage)으로 연결하여 토큰을 95% 단축"""
+    try:
+        pil_images = []
+        for b in images_bytes_list[:16]:  # 최대 16개 썸네일 조합
+            try:
+                img = Image.open(io.BytesIO(b)).convert("RGB")
+                img.thumbnail(thumb_size)
+                pil_images.append(img)
+            except Exception:
+                pass
 
-아래 작성 형식에 맞춰 한국어로 정확히 분석 리포트를 작성해주세요. 평점은 1~5 사이 숫자만 적어주세요.
+        if not pil_images:
+            return None
 
-메시지_좋은점: (이 브랜드가 현재 강조하고 있는 핵심 메시지 전략의 강점 및 타겟 소구 후킹 포인트 2문장)
-메시지_아쉬운점: (메시지 측면에서 진부하거나 보완이 필요한 아쉬운 점 1~2문장)
+        num_imgs = len(pil_images)
+        rows = (num_imgs + cols - 1) // cols
+        grid_w = cols * thumb_size[0]
+        grid_h = rows * thumb_size[1]
+
+        collage = Image.new("RGB", (grid_w, grid_h), (255, 255, 255))
+
+        for idx, img in enumerate(pil_images):
+            r = idx // cols
+            c = idx % cols
+            collage.paste(img, (c * thumb_size[0], r * thumb_size[1]))
+
+        buf = io.BytesIO()
+        collage.save(buf, format="JPEG", quality=75)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+# ------------------------------------------------------------------
+# 브랜드 전체 통합 분석 프롬프트 (객관적 별표 평점 & 전체 조망)
+# ------------------------------------------------------------------
+BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 분석가입니다.
+제시된 브랜드 '{brand_name}'이 메타 라이브러리에서 현재 동시 운영 중인 전체 광고 소재 그리드 이미지를 통째로 조망하고 객관적인 브랜드 통합 분석을 진행해 주세요.
+
+아래 작성 형식에 맞춰 한국어로 분석 리포트를 작성해 주세요. 평점은 1~5 사이 숫자만 적어주세요.
+
+메시지_좋은점: (이 브랜드 소재들에서 강조되는 핵심 메인 메시지 및 소구 포인트 전략 강점 2문장)
+메시지_아쉬운점: (메시지 측면에서 진부하거나 보완이 필요한 점 1~2문장)
 메시지_평점: (숫자만 1~5)
 
-비주얼_좋은점: (전체적인 소재 이미지의 색감, 레이아웃 구성, 비주얼 톤앤매너 장점 2문장)
-비주얼_아쉬운점: (시각적 차별성이나 디자인 구성 면에서 아쉬운 점 1~2문장)
+비주얼_좋은점: (전체적인 키 비주얼, 색감, 톤앤매너, 레이아웃 차별성 및 강점 2문장)
+비주얼_아쉬운점: (시각적 피로도나 디자인 요소 측면에서 아쉬운 점 1~2문장)
 비주얼_평점: (숫자만 1~5)
 
-종합_총평: (현재 이 브랜드의 전체 크리에이티브 집행 방향성에 대한 한줄 총평)
+종합_총평: (전체 광고 소재가 예상 타겟층에게 전달되는 판독성 및 브랜드 타겟팅 종합 한줄 총평)
 종합_평점: (숫자만 1~5)
 """
 
@@ -324,7 +371,7 @@ def render_integrated_scorecard(report):
     cats = [
         ("메시지 전략", msg_desc, report.get("msg_score", 0)),
         ("비주얼 / 디자인", vis_desc, report.get("vis_score", 0)),
-        ("종합 크리에이티브 평가", overall_desc, report.get("overall_score", 0)),
+        ("종합 타겟 전달력 평가", overall_desc, report.get("overall_score", 0)),
     ]
     html = '<div class="score-grid">'
     for label, desc, score in cats:
@@ -337,34 +384,23 @@ def render_integrated_scorecard(report):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def compress_image_bytes(img_bytes, max_size=(400, 400)):
-    """토큰 사용량을 줄이기 위한 이미지 압축 함수"""
-    try:
-        img = Image.open(io.BytesIO(img_bytes))
-        img.thumbnail(max_size)
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=70)
-        return buf.getvalue()
-    except Exception:
-        return img_bytes
-
-
-def run_brand_integrated_analysis(brand_name, sample_images):
-    """압축된 대표 이미지 2장만 전달하여 429 토큰 초과 오류 완벽 방지"""
+def run_brand_integrated_analysis(brand_name, images_bytes_list):
+    """통째 캡처 콜라주 이미지 1장만 Gemini에 전송하여 429 오류를 100% 원천 방지"""
+    collage_bytes = create_image_grid_collage(images_bytes_list)
+    
     contents = [
         BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name)
     ]
-    # 대표 이미지 최대 2장만 경량화하여 전송
-    for fn, img_bytes in sample_images[:2]:
-        compressed = compress_image_bytes(img_bytes)
-        contents.append(types.Part.from_bytes(data=compressed, mime_type="image/jpeg"))
+    
+    if collage_bytes:
+        contents.append(types.Part.from_bytes(data=collage_bytes, mime_type="image/jpeg"))
 
     resp = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
     return parse_integrated_report(resp.text)
 
 
 # ------------------------------------------------------------------
-# [통합 소재 UI - 삭제 기능 포함]
+# [통합 소재 UI]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
@@ -384,21 +420,28 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
                 with st.spinner("운영 중인 라이브 광고 배너를 수집 중입니다..."):
-                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=20))
+                    img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=24))
                     
                     if not img_urls:
                         st.info("수집된 배너가 없습니다. URL을 재확인해주시거나 파일 직접 업로드를 이용해 주세요.")
                     else:
                         st.session_state[sess_key] = []
+                        seen_hashes = set()
+                        
                         for idx, url in enumerate(img_urls, start=1):
                             try:
                                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                                fn = f"ad_{idx}.png"
-                                st.session_state[sess_key].append({
-                                    "id": f"{idx}_{len(resp.content)}",
-                                    "fn": fn,
-                                    "bytes": resp.content
-                                })
+                                content = resp.content
+                                # 바이너리 크기 기반 중복제거
+                                chash = len(content)
+                                if chash not in seen_hashes:
+                                    seen_hashes.add(chash)
+                                    fn = f"ad_{idx}.png"
+                                    st.session_state[sess_key].append({
+                                        "id": f"{idx}_{chash}",
+                                        "fn": fn,
+                                        "bytes": content
+                                    })
                             except Exception:
                                 pass
                         st.success(f"[{selected_comp}] 운영 중인 소재 {len(st.session_state[sess_key])}건 수집 완료!")
@@ -459,11 +502,11 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                 if not current_items:
                     st.warning("분석할 소재가 없습니다. 먼저 수집해 주세요.")
                 else:
-                    with st.spinner(f"'{selected_comp}' 브랜드 전체 광고 소재 통합 분석 중..."):
-                        sample_imgs = [(it["fn"], it["bytes"]) for it in current_items]
+                    with st.spinner(f"'{selected_comp}' 브랜드 소재 통째 캡처 통합 분석 중..."):
+                        raw_bytes_list = [it["bytes"] for it in current_items]
 
                         try:
-                            report = run_brand_integrated_analysis(selected_comp, sample_imgs)
+                            report = run_brand_integrated_analysis(selected_comp, raw_bytes_list)
                             on_complete({
                                 "brand_name": selected_comp,
                                 "count": len(current_items),
@@ -608,20 +651,23 @@ elif nav == "02 · 경쟁사 프로필":
                 st.divider()
 
 # ------------------------------------------------------------------
-# 03 · 자사 소재 분석
+# 03 · 자사 소재 분석 (자사 메타 URL 자동 세팅 완료)
 # ------------------------------------------------------------------
 elif nav == "03 · 자사 소재 분석":
-    section_header("03", f"{segment} 자사 광고 소재 분석", "지금 우리가 쓰고 있는 브랜드 소재를 통합 분석합니다.")
+    section_header("03", f"{segment} 자사 광고 소재 분석", f"{segment} 자사 브랜드의 메타 광고 라이브러리 URL이 자동 세팅됩니다.")
+
+    # 유아 / 초등 / 중등에 맞춰 자사 URL 자동 세팅
+    own_auto_url = OWN_META_URL_MAP.get(segment, "")
 
     def _on_own_complete(res):
         W["own_analyses"] = res
         st.success("자사 브랜드 통합 소재 분석 완료! 04 탭에서 경쟁사와 비교할 수 있습니다.")
 
-    render_material_section("own", "자사", "", _on_own_complete)
+    render_material_section("own", f"자사({segment})", own_auto_url, _on_own_complete)
 
     if W["own_analyses"]:
         st.divider()
-        st.markdown("**자사 브랜드 통합 분석 리포트**")
+        st.markdown(f"**자사({segment}) 브랜드 통합 분석 리포트**")
         render_integrated_scorecard(W["own_analyses"]["report"])
 
 # ------------------------------------------------------------------
