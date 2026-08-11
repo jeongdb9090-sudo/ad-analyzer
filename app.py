@@ -10,7 +10,9 @@ import requests
 import streamlit as st
 from PIL import Image
 
+# ------------------------------------------------------------------
 # Streamlit Cloud 서버 구동 시 Playwright 크롬 브라우저 자동 다운로드
+# ------------------------------------------------------------------
 @st.cache_resource
 def install_playwright_browsers():
     try:
@@ -20,7 +22,9 @@ def install_playwright_browsers():
 
 install_playwright_browsers()
 
+# ------------------------------------------------------------------
 # 기본 설정 및 디자인 CSS
+# ------------------------------------------------------------------
 st.set_page_config(page_title="경쟁사 광고 소재 분석 (Multi-AI)", layout="wide", page_icon="◆")
 
 st.markdown("""
@@ -97,11 +101,13 @@ h1, h2, h3, h4, h5, h6 {
 </style>
 """, unsafe_allow_html=True)
 
+
 def section_header(step, title, desc=""):
     st.markdown(f'<div class="eyebrow">STEP {step}</div>', unsafe_allow_html=True)
     st.markdown(f'<div class="section-title">{title}</div>', unsafe_allow_html=True)
     if desc:
         st.markdown(f'<div class="section-desc">{desc}</div>', unsafe_allow_html=True)
+
 
 def stars(score, max_score=5):
     try:
@@ -110,7 +116,10 @@ def stars(score, max_score=5):
         n = 0
     return "★" * n + "☆" * (max_score - n)
 
+
+# ------------------------------------------------------------------
 # 세그먼트 & 메타 URL 사전
+# ------------------------------------------------------------------
 SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
     "유아": ["윙크", "웅진스마트올", "밀크T아이", "리틀홈런"],
@@ -145,6 +154,7 @@ BRAND_FILE = os.path.join(BASE_DIR, "ad_signal_brand.json")
 COMPETITORS_FILE = os.path.join(BASE_DIR, "ad_signal_competitors.json")
 PROFILES_FILE = os.path.join(BASE_DIR, "ad_signal_profiles.json")
 
+
 def load_json(path, default):
     if not os.path.exists(path):
         return default
@@ -154,23 +164,29 @@ def load_json(path, default):
     except Exception:
         return default
 
+
 def save_json(path, data):
     with open(path, "w", encoding="utf-8") as fp:
         json.dump(data, fp, ensure_ascii=False, indent=2)
 
+
 def load_history(): return load_json(HISTORY_FILE, [])
+
 
 def save_history_entry(entry):
     history = load_history()
     history.insert(0, entry)
     save_json(HISTORY_FILE, history)
 
+
 def load_all_brands(): return load_json(BRAND_FILE, {})
+
 
 def save_brand(segment, data):
     all_brands = load_all_brands()
     all_brands[segment] = data
     save_json(BRAND_FILE, all_brands)
+
 
 def load_competitors():
     data = load_json(COMPETITORS_FILE, {})
@@ -182,20 +198,26 @@ def load_competitors():
     if changed: save_json(COMPETITORS_FILE, data)
     return data
 
+
 def add_competitor(segment, name):
     data = load_competitors()
     if name and name not in data[segment]:
         data[segment].append(name)
         save_json(COMPETITORS_FILE, data)
 
+
 def load_all_profiles(): return load_json(PROFILES_FILE, {})
+
 
 def save_profile_entry(segment, competitor, entry):
     data = load_all_profiles()
     data.setdefault(segment, {}).setdefault(competitor, []).insert(0, entry)
     save_json(PROFILES_FILE, data)
 
+
+# ------------------------------------------------------------------
 # 메타 광고 수집기
+# ------------------------------------------------------------------
 async def scrape_meta_ad_images(target_url, max_items=24):
     captured_urls = []
     try:
@@ -252,7 +274,10 @@ async def scrape_meta_ad_images(target_url, max_items=24):
         
     return captured_urls[:max_items]
 
-# 초경량화 그리드 콜라주 생성 (토큰 소모량 최저 수준 유지)
+
+# ------------------------------------------------------------------
+# 통째 캡처 이미지 콜라주(Collage) 생성 함수
+# ------------------------------------------------------------------
 def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
     try:
         pil_images = []
@@ -285,7 +310,10 @@ def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
     except Exception:
         return None
 
-# 분석 프롬프트
+
+# ------------------------------------------------------------------
+# 멀티 AI 호출 엔진 (Gemini / ChatGPT / Claude 통합 지원)
+# ------------------------------------------------------------------
 BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 분석가입니다.
 제시된 브랜드 '{brand_name}'이 메타 라이브러리에서 현재 동시 운영 중인 전체 광고 소재 그리드 이미지를 통째로 조망하고 객관적인 브랜드 통합 분석을 진행해 주세요.
 
@@ -310,6 +338,7 @@ _SCORE_LABEL_TO_KEY = {
 }
 _SCORE_EMPTY = {k: "" for k in _SCORE_LABEL_TO_KEY.values()}
 
+
 def parse_labeled_text(text, label_to_key, empty_fields):
     fields = dict(empty_fields)
     current = None
@@ -327,8 +356,10 @@ def parse_labeled_text(text, label_to_key, empty_fields):
             fields[current] = (fields[current] + " " + line).strip()
     return fields
 
+
 def parse_integrated_report(text):
     return parse_labeled_text(text, _SCORE_LABEL_TO_KEY, _SCORE_EMPTY)
+
 
 def render_integrated_scorecard(report):
     msg_desc = f"👍 **장점**: {report.get('msg_good', '')}\n👎 **아쉬운점**: {report.get('msg_bad', '')}"
@@ -350,7 +381,8 @@ def render_integrated_scorecard(report):
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
-# Multi-AI 표준 호출
+
+# Multi-AI 표준 호환 호출 함수 (Gemini는 1.5-flash 표준 사용)
 def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
     if ai_provider == "Gemini (Google)":
         from google import genai
@@ -359,7 +391,8 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
         contents = [prompt_text]
         if collage_bytes:
             contents.append(types.Part.from_bytes(data=collage_bytes, mime_type="image/jpeg"))
-        resp = client.models.generate_content(model="gemini-2.0-flash", contents=contents)
+        # 정식 지원 표준 모델 사용
+        resp = client.models.generate_content(model="gemini-1.5-flash", contents=contents)
         return resp.text
 
     elif ai_provider == "ChatGPT (OpenAI)":
@@ -400,13 +433,17 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
         )
         return resp.content[0].text
 
+
 def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes_list):
     collage_bytes = create_image_grid_collage(images_bytes_list)
     prompt = BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name)
     raw_text = run_unified_ai_prompt(ai_provider, api_key, prompt, collage_bytes)
     return parse_integrated_report(raw_text)
 
+
+# ------------------------------------------------------------------
 # [통합 소재 UI]
+# ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
     
@@ -525,7 +562,10 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         except Exception as e:
                             st.error(f"통합 분석 중 오류 발생: {e}")
 
+
+# ------------------------------------------------------------------
 # 상단 헤더 & 멀티 AI 엔진 선택 영역
+# ------------------------------------------------------------------
 top_col1, top_col2, top_col3 = st.columns([2.5, 1.2, 1.5])
 with top_col1:
     st.markdown("""
@@ -569,7 +609,9 @@ with top_col3:
     )
     st.session_state["current_api_key"] = input_api_key
 
+# ------------------------------------------------------------------
 # 사이드바
+# ------------------------------------------------------------------
 NAV_ITEMS = [
     "01 · 경쟁사 소재 분석",
     "02 · 경쟁사 프로필",
@@ -597,7 +639,9 @@ if segment not in st.session_state.work:
     }
 W = st.session_state.work[segment]
 
+# ------------------------------------------------------------------
 # 01 · 경쟁사 소재 분석
+# ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
     section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다.")
 
@@ -635,7 +679,9 @@ if nav == "01 · 경쟁사 소재 분석":
         st.markdown(f"### '{W['last_competitor']}' 브랜드 전체 크리에이티브 통합 분석 리포트")
         render_integrated_scorecard(W["last_comp_result"]["report"])
 
+# ------------------------------------------------------------------
 # 02 · 경쟁사 프로필
+# ------------------------------------------------------------------
 elif nav == "02 · 경쟁사 프로필":
     section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 브랜드별 통합 크리에이티브 리포트가 누적됩니다.")
 
@@ -663,7 +709,9 @@ elif nav == "02 · 경쟁사 프로필":
                 render_integrated_scorecard(rep)
                 st.divider()
 
+# ------------------------------------------------------------------
 # 03 · 자사 소재 분석
+# ------------------------------------------------------------------
 elif nav == "03 · 자사 소재 분석":
     section_header("03", f"{segment} 자사 광고 소재 분석", f"{segment} 자사 브랜드의 메타 광고 라이브러리 URL이 자동 세팅됩니다.")
 
@@ -680,7 +728,9 @@ elif nav == "03 · 자사 소재 분석":
         st.markdown(f"**자사({segment}) 브랜드 통합 분석 리포트**")
         render_integrated_scorecard(W["own_analyses"]["report"])
 
+# ------------------------------------------------------------------
 # 04 · 메시지 갭 분석 & 위닝 포인트
+# ------------------------------------------------------------------
 elif nav == "04 · 메시지 갭 분석":
     section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트", "경쟁사 누적 프로필과 자사 브랜드 리포트를 비교해 부족한 메시지를 도출합니다.")
 
@@ -777,7 +827,9 @@ elif nav == "04 · 메시지 갭 분석":
 
             if W["gap_analysis"]: st.markdown(W["gap_analysis"])
 
+# ------------------------------------------------------------------
 # 05 · 스토리보드 아이디어
+# ------------------------------------------------------------------
 elif nav == "05 · 스토리보드 아이디어":
     section_header("05", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드 정보를 입력하고 기획안을 생성합니다.")
 
@@ -891,7 +943,9 @@ elif nav == "05 · 스토리보드 아이디어":
                 file_name=f"{segment}_ad_winning_storyboards.md", mime="text/markdown",
             )
 
+# ------------------------------------------------------------------
 # 06 · 히스토리
+# ------------------------------------------------------------------
 elif nav == "06 · 히스토리":
     section_header("06", "히스토리", "완료한 아이디어 추출 결과가 부문 구분과 함께 자동으로 쌓입니다.")
 
