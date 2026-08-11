@@ -1,5 +1,7 @@
 streamlit
 google-genai
+openai
+anthropic
 playwright
 pillow
 requests
