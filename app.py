@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import io
 import json
 import os
@@ -8,8 +9,6 @@ from datetime import datetime
 import requests
 import streamlit as st
 from PIL import Image
-from google import genai
-from google.genai import types
 
 # ------------------------------------------------------------------
 # Streamlit Cloud 서버 구동 시 Playwright 크롬 브라우저 자동 다운로드
@@ -26,7 +25,7 @@ install_playwright_browsers()
 # ------------------------------------------------------------------
 # 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
-st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
+st.set_page_config(page_title="경쟁사 광고 소재 분석 (Multi-AI)", layout="wide", page_icon="◆")
 
 st.markdown("""
 <style>
@@ -119,7 +118,7 @@ def stars(score, max_score=5):
 
 
 # ------------------------------------------------------------------
-# 세그먼트 & 경쟁사 / 자사 메타 URL 매핑 사전
+# 세그먼트 & 메타 URL 사전
 # ------------------------------------------------------------------
 SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
@@ -217,7 +216,7 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 메타 광고 수집기 (동영상 썸네일 포착 및 프로필 이미지 엄격 배제)
+# 메타 광고 수집기
 # ------------------------------------------------------------------
 async def scrape_meta_ad_images(target_url, max_items=24):
     captured_urls = []
@@ -241,24 +240,18 @@ async def scrape_meta_ad_images(target_url, max_items=24):
                 await page.mouse.wheel(0, 1800)
                 await page.wait_for_timeout(500)
 
-            # 동영상 poster 및 일반 배너 태그 가로채기
             extracted = await page.evaluate('''() => {
                 const urls = [];
-                
-                // 1. video 태그의 poster 섬네일 체크
                 const videoElements = document.querySelectorAll('video');
                 videoElements.forEach(v => {
                     if (v.poster && (v.poster.includes("scontent") || v.poster.includes("fbcdn"))) {
                         urls.push(v.poster);
                     }
                 });
-
-                // 2. img 태그 중 프로필 사진을 배제하고 배너만 선별
                 const imgElements = document.querySelectorAll('img');
                 imgElements.forEach(img => {
                     if (img.naturalWidth >= 200 && img.naturalHeight >= 200) {
                         const src = img.src;
-                        // 프로필/아바타 관련 인플루언서 헤더 이미지 엄격 배제
                         const isProfile = src.includes("profile") || src.includes("avatar") || src.includes("100x100") || src.includes("50x50");
                         if ((src.includes("scontent") || src.includes("fbcdn")) && !isProfile) {
                             urls.push(src);
@@ -319,7 +312,7 @@ def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(240, 240)):
 
 
 # ------------------------------------------------------------------
-# 브랜드 전체 통합 분석 프롬프트
+# 멀티 AI 호출 엔진 (Gemini / ChatGPT / Claude 통합 지원)
 # ------------------------------------------------------------------
 BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 분석가입니다.
 제시된 브랜드 '{brand_name}'이 메타 라이브러리에서 현재 동시 운영 중인 전체 광고 소재 그리드 이미지를 통째로 조망하고 객관적인 브랜드 통합 분석을 진행해 주세요.
@@ -389,18 +382,62 @@ def render_integrated_scorecard(report):
     st.markdown(html, unsafe_allow_html=True)
 
 
-def run_brand_integrated_analysis(brand_name, images_bytes_list):
-    collage_bytes = create_image_grid_collage(images_bytes_list)
-    
-    contents = [
-        BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name)
-    ]
-    
-    if collage_bytes:
-        contents.append(types.Part.from_bytes(data=collage_bytes, mime_type="image/jpeg"))
+# Multi-AI 공통 호환 호출 함수
+def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
+    if ai_provider == "Gemini (Google)":
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=api_key)
+        contents = [prompt_text]
+        if collage_bytes:
+            contents.append(types.Part.from_bytes(data=collage_bytes, mime_type="image/jpeg"))
+        resp = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
+        return resp.text
 
-    resp = client.models.generate_content(model="gemini-2.5-flash", contents=contents)
-    return parse_integrated_report(resp.text)
+    elif ai_provider == "ChatGPT (OpenAI)":
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+        content_payload = [{"type": "text", "text": prompt_text}]
+        if collage_bytes:
+            b64_img = base64.b64encode(collage_bytes).decode("utf-8")
+            content_payload.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+            })
+        resp = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": content_payload}]
+        )
+        return resp.choices[0].message.content
+
+    elif ai_provider == "Claude (Anthropic)":
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        content_payload = []
+        if collage_bytes:
+            b64_img = base64.b64encode(collage_bytes).decode("utf-8")
+            content_payload.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": b64_img
+                }
+            })
+        content_payload.append({"type": "text", "text": prompt_text})
+        resp = client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": content_payload}]
+        )
+        return resp.content[0].text
+
+
+def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes_list):
+    collage_bytes = create_image_grid_collage(images_bytes_list)
+    prompt = BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name)
+    raw_text = run_unified_ai_prompt(ai_provider, api_key, prompt, collage_bytes)
+    return parse_integrated_report(raw_text)
 
 
 # ------------------------------------------------------------------
@@ -427,7 +464,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                     img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=24))
                     
                     if not img_urls:
-                        st.info(f"⚠️ [{selected_comp}] 해당 메타 라이브러리 페이지는 현재 이미지 소재가 0건이거나 동영상(Video) 위주의 광고로 구성되어 있습니다.")
+                        st.info(f"⚠️ [{selected_comp}] 이미지 배너 소재가 0건이거나 동영상(Video) 위주의 광고로 구동 중입니다.")
                         st.session_state[sess_key] = []
                     else:
                         st.session_state[sess_key] = []
@@ -448,11 +485,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                                     })
                             except Exception:
                                 pass
-                        
-                        if st.session_state[sess_key]:
-                            st.success(f"[{selected_comp}] 운영 중인 이미지 소재 {len(st.session_state[sess_key])}건 수집 완료!")
-                        else:
-                            st.info(f"⚠️ [{selected_comp}] 이미지 배너 소재가 0건입니다. (동영상 전용 광고)")
+                        st.success(f"[{selected_comp}] 운영 중인 이미지 소재 {len(st.session_state[sess_key])}건 수집 완료!")
 
     with tab2:
         uploaded_files = st.file_uploader(
@@ -503,18 +536,23 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
 
         st.divider()
         if st.button(f"'{selected_comp}' 전체 브랜드 통합 분석 실행", type="primary", key=f"{prefix}_analyze_btn_{selected_comp}"):
-            if not client:
-                st.error("Gemini API 키를 상단에 먼저 입력해주세요.")
+            if not st.session_state.get("current_api_key"):
+                st.error("상단에서 API Key를 입력해 주세요.")
             else:
                 current_items = st.session_state[sess_key]
                 if not current_items:
                     st.warning("분석할 소재가 없습니다. 먼저 수집해 주세요.")
                 else:
-                    with st.spinner(f"'{selected_comp}' 브랜드 소재 통째 캡처 통합 분석 중..."):
+                    with st.spinner(f"[{st.session_state['current_ai_provider']}] '{selected_comp}' 브랜드 소재 통째 캡처 통합 분석 중..."):
                         raw_bytes_list = [it["bytes"] for it in current_items]
 
                         try:
-                            report = run_brand_integrated_analysis(selected_comp, raw_bytes_list)
+                            report = run_brand_integrated_analysis(
+                                st.session_state['current_ai_provider'],
+                                st.session_state['current_api_key'],
+                                selected_comp,
+                                raw_bytes_list
+                            )
                             on_complete({
                                 "brand_name": selected_comp,
                                 "count": len(current_items),
@@ -525,9 +563,9 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
 
 
 # ------------------------------------------------------------------
-# 상단 헤더 & API 키 입력
+# 상단 헤더 & 멀티 AI 엔진 선택 영역
 # ------------------------------------------------------------------
-top_col1, top_col2 = st.columns([3, 1.3])
+top_col1, top_col2, top_col3 = st.columns([2.5, 1.2, 1.5])
 with top_col1:
     st.markdown("""
     <div class="appbar">
@@ -537,26 +575,38 @@ with top_col1:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
 with top_col2:
+    ai_provider = st.selectbox(
+        "AI 엔진 선택",
+        ["Gemini (Google)", "ChatGPT (OpenAI)", "Claude (Anthropic)"],
+        key="selected_ai_provider"
+    )
+    st.session_state["current_ai_provider"] = ai_provider
+
+with top_col3:
     default_key = ""
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            default_key = st.secrets["GEMINI_API_KEY"]
-    except Exception: pass
-    
+    if ai_provider == "Gemini (Google)" and "GEMINI_API_KEY" in st.secrets:
+        default_key = st.secrets["GEMINI_API_KEY"]
+    elif ai_provider == "ChatGPT (OpenAI)" and "OPENAI_API_KEY" in st.secrets:
+        default_key = st.secrets["OPENAI_API_KEY"]
+    elif ai_provider == "Claude (Anthropic)" and "ANTHROPIC_API_KEY" in st.secrets:
+        default_key = st.secrets["ANTHROPIC_API_KEY"]
+
+    placeholder_text = {
+        "Gemini (Google)": "Gemini API 키 (AIzaSy...)",
+        "ChatGPT (OpenAI)": "OpenAI API 키 (sk-proj-...)",
+        "Claude (Anthropic)": "Claude API 키 (sk-ant-...)"
+    }[ai_provider]
+
     input_api_key = st.text_input(
-        "Gemini API Key 입력",
+        f"{ai_provider} API Key",
         value=default_key,
         type="password",
-        placeholder="API 키를 입력하세요 (AIzaSy...)",
-        key="main_gemini_api_key_input"
+        placeholder=placeholder_text,
+        key="main_ai_api_key_input"
     )
-    st.markdown(
-        '<div class="appbar-pill" style="margin-left:0;">FREE · GEMINI 2.5 FLASH</div>',
-        unsafe_allow_html=True,
-    )
-
-client = genai.Client(api_key=input_api_key) if input_api_key else None
+    st.session_state["current_api_key"] = input_api_key
 
 # ------------------------------------------------------------------
 # 사이드바
@@ -659,7 +709,7 @@ elif nav == "02 · 경쟁사 프로필":
                 st.divider()
 
 # ------------------------------------------------------------------
-# 03 · 자사 소재 분석 (자사 메타 URL 자동 세팅 완료)
+# 03 · 자사 소재 분석
 # ------------------------------------------------------------------
 elif nav == "03 · 자사 소재 분석":
     section_header("03", f"{segment} 자사 광고 소재 분석", f"{segment} 자사 브랜드의 메타 광고 라이브러리 URL이 자동 세팅됩니다.")
@@ -690,12 +740,15 @@ elif nav == "04 · 메시지 갭 분석":
         st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해주세요.")
     else:
         if st.button("경쟁사 위닝 포인트 도출", type="primary", key="insight_btn"):
-            comp_summary = ""
-            for comp, e in all_comp_entries:
-                rep = e.get("report", {})
-                comp_summary += f"[{comp}]\n메시지장점: {rep.get('msg_good','')}\n아쉬운점: {rep.get('msg_bad','')}\n\n"
+            if not st.session_state.get("current_api_key"):
+                st.error("상단에서 API Key를 입력해 주세요.")
+            else:
+                comp_summary = ""
+                for comp, e in all_comp_entries:
+                    rep = e.get("report", {})
+                    comp_summary += f"[{comp}]\n메시지장점: {rep.get('msg_good','')}\n아쉬운점: {rep.get('msg_bad','')}\n\n"
 
-            INSIGHT_PROMPT = """당신은 수석 브랜드 전략가입니다. 아래 경쟁사들의 최신 광고 분석 리포트를 검토하고,
+                INSIGHT_PROMPT = """당신은 수석 브랜드 전략가입니다. 아래 경쟁사들의 최신 광고 분석 리포트를 검토하고,
 경쟁사들이 공통으로 활용하고 있는 성공 패턴(위닝 포인트)을 3가지 핵심 키워드로 요약하고, 시장의 트렌드 인사이트를 도출해주세요.
 
 [경쟁사 분석 모음]
@@ -710,11 +763,15 @@ elif nav == "04 · 메시지 갭 분석":
 ### 종합 마케팅 인사이트
 - 시장 내 공통적인 소구 트렌드 및 시사점
 """
-            with st.spinner("인사이트 도출 중..."):
-                try:
-                    resp = client.models.generate_content(model="gemini-2.5-flash", contents=[INSIGHT_PROMPT.format(comp_summary=comp_summary)])
-                    W["insight"] = resp.text
-                except Exception as e: st.error(f"오류 발생: {e}")
+                with st.spinner(f"[{st.session_state['current_ai_provider']}] 인사이트 도출 중..."):
+                    try:
+                        resp_text = run_unified_ai_prompt(
+                            st.session_state["current_ai_provider"],
+                            st.session_state["current_api_key"],
+                            INSIGHT_PROMPT.format(comp_summary=comp_summary)
+                        )
+                        W["insight"] = resp_text
+                    except Exception as e: st.error(f"오류 발생: {e}")
 
         if W["insight"]: st.markdown(W["insight"])
 
@@ -725,15 +782,18 @@ elif nav == "04 · 메시지 갭 분석":
             st.info("03 탭에서 자사 소재 분석을 완료하면, 경쟁사 대비 부족한 메시지를 비교해드려요.")
         else:
             if st.button("메시지 갭 분석 실행", type="primary", key="gap_btn"):
-                comp_summary = ""
-                for comp, e in all_comp_entries:
-                    rep = e.get("report", {})
-                    comp_summary += f"[{comp}] {rep.get('msg_good','')}\n"
-                
-                own_rep = W["own_analyses"].get("report", {})
-                own_summary = f"[자사] 메시지장점: {own_rep.get('msg_good','')}\n아쉬운점: {own_rep.get('msg_bad','')}"
+                if not st.session_state.get("current_api_key"):
+                    st.error("상단에서 API Key를 입력해 주세요.")
+                else:
+                    comp_summary = ""
+                    for comp, e in all_comp_entries:
+                        rep = e.get("report", {})
+                        comp_summary += f"[{comp}] {rep.get('msg_good','')}\n"
+                    
+                    own_rep = W["own_analyses"].get("report", {})
+                    own_summary = f"[자사] 메시지장점: {own_rep.get('msg_good','')}\n아쉬운점: {own_rep.get('msg_bad','')}"
 
-                GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 경쟁사 그룹과 자사 브랜드 분석 정보입니다.
+                    GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 경쟁사 그룹과 자사 브랜드 분석 정보입니다.
 두 그룹을 비교해서 아래 내용을 정리해주세요.
 
 [경쟁사 그룹 요약]
@@ -754,11 +814,15 @@ elif nav == "04 · 메시지 갭 분석":
 ### 우리만 갖고 있는 강점 (계속 유지할 것)
 - ...
 """
-                with st.spinner("갭 분석 중..."):
-                    try:
-                        resp = client.models.generate_content(model="gemini-2.5-flash", contents=[GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)])
-                        W["gap_analysis"] = resp.text
-                    except Exception as e: st.error(f"오류 발생: {e}")
+                    with st.spinner(f"[{st.session_state['current_ai_provider']}] 갭 분석 중..."):
+                        try:
+                            resp_text = run_unified_ai_prompt(
+                                st.session_state["current_ai_provider"],
+                                st.session_state["current_api_key"],
+                                GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)
+                            )
+                            W["gap_analysis"] = resp_text
+                        except Exception as e: st.error(f"오류 발생: {e}")
 
             if W["gap_analysis"]: st.markdown(W["gap_analysis"])
 
@@ -816,9 +880,12 @@ elif nav == "05 · 스토리보드 아이디어":
         st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해 주세요.")
     else:
         if st.button("위닝 스토리보드 아이디어 생성", type="primary"):
-            gap_context = W["gap_analysis"] or "없음 (아직 메시지 갭 분석을 실행하지 않음)"
+            if not st.session_state.get("current_api_key"):
+                st.error("상단에서 API Key를 입력해 주세요.")
+            else:
+                gap_context = W["gap_analysis"] or "없음 (아직 메시지 갭 분석을 실행하지 않음)"
 
-            STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
+                STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
 그리고 자사 디자인 메모리를 반영하여 차별화된 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
 
 [자사 브랜드 정보]
@@ -840,31 +907,32 @@ elif nav == "05 · 스토리보드 아이디어":
 - **CTA (행동 유도 문구)**: 
 - **차별화 포인트**: 
 """
-            with st.spinner("스토리보드 기획안 작성 중..."):
-                try:
-                    resp = client.models.generate_content(
-                        model="gemini-2.5-flash",
-                        contents=[STORYBOARD_PROMPT.format(
-                            brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
-                            target_audience=target_audience,
-                            design_memory=brand_design_memory or "기본 톤앤매너",
-                            gap_context=gap_context
-                        )]
-                    )
-                    W["ideas"] = resp.text
+                with st.spinner(f"[{st.session_state['current_ai_provider']}] 스토리보드 기획안 작성 중..."):
+                    try:
+                        resp_text = run_unified_ai_prompt(
+                            st.session_state["current_ai_provider"],
+                            st.session_state["current_api_key"],
+                            STORYBOARD_PROMPT.format(
+                                brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
+                                target_audience=target_audience,
+                                design_memory=brand_design_memory or "기본 톤앤매너",
+                                gap_context=gap_context
+                            )
+                        )
+                        W["ideas"] = resp_text
 
-                    save_history_entry({
-                        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                        "segment": segment,
-                        "brand_name": brand_name,
-                        "brand_product": brand_product,
-                        "target_audience": target_audience,
-                        "material_count": len(all_comp_entries),
-                        "insight": W["insight"],
-                        "gap_analysis": W["gap_analysis"],
-                        "ideas": W["ideas"],
-                    })
-                except Exception as e: st.error(f"오류 발생: {e}")
+                        save_history_entry({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "segment": segment,
+                            "brand_name": brand_name,
+                            "brand_product": brand_product,
+                            "target_audience": target_audience,
+                            "material_count": len(all_comp_entries),
+                            "insight": W["insight"],
+                            "gap_analysis": W["gap_analysis"],
+                            "ideas": W["ideas"],
+                        })
+                    except Exception as e: st.error(f"오류 발생: {e}")
 
         if W["ideas"]:
             st.markdown(W["ideas"])
