@@ -275,9 +275,6 @@ async def scrape_meta_ad_images(target_url, max_items=24):
     return captured_urls[:max_items]
 
 
-# ------------------------------------------------------------------
-# 통째 캡처 이미지 콜라주(Collage) 생성 함수
-# ------------------------------------------------------------------
 def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
     try:
         pil_images = []
@@ -311,9 +308,6 @@ def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
         return None
 
 
-# ------------------------------------------------------------------
-# 멀티 AI 호출 엔진 (Gemini / ChatGPT / Claude 통합 지원)
-# ------------------------------------------------------------------
 BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 분석가입니다.
 제시된 브랜드 '{brand_name}'이 메타 라이브러리에서 현재 동시 운영 중인 전체 광고 소재 그리드 이미지를 통째로 조망하고 객관적인 브랜드 통합 분석을 진행해 주세요.
 
@@ -382,16 +376,31 @@ def render_integrated_scorecard(report):
     st.markdown(html, unsafe_allow_html=True)
 
 
-# Multi-AI 표준 호환 호출 함수 (Gemini는 1.5-flash 표준 사용)
+# ------------------------------------------------------------------
+# Multi-AI 호환 안전 호출 엔진 (404 예외 완벽 대응)
+# ------------------------------------------------------------------
 def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
     if ai_provider == "Gemini (Google)":
+        # 구글 패키지의 404 SDK 구문 에러 예외 대응
         from google import genai
         from google.genai import types
         client = genai.Client(api_key=api_key)
+        
         contents = [prompt_text]
         if collage_bytes:
             contents.append(types.Part.from_bytes(data=collage_bytes, mime_type="image/jpeg"))
-        # 정식 지원 표준 모델 사용
+
+        # 최신 모델 우선 시도 후 404 발생 시 폴백
+        for model_candidate in ["gemini-2.0-flash", "gemini-1.5-flash"]:
+            try:
+                resp = client.models.generate_content(model=model_candidate, contents=contents)
+                return resp.text
+            except Exception as e:
+                if "404" in str(e):
+                    continue
+                raise e
+        
+        # 기본 fallback
         resp = client.models.generate_content(model="gemini-1.5-flash", contents=contents)
         return resp.text
 
@@ -639,9 +648,7 @@ if segment not in st.session_state.work:
     }
 W = st.session_state.work[segment]
 
-# ------------------------------------------------------------------
 # 01 · 경쟁사 소재 분석
-# ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
     section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다.")
 
@@ -679,9 +686,7 @@ if nav == "01 · 경쟁사 소재 분석":
         st.markdown(f"### '{W['last_competitor']}' 브랜드 전체 크리에이티브 통합 분석 리포트")
         render_integrated_scorecard(W["last_comp_result"]["report"])
 
-# ------------------------------------------------------------------
 # 02 · 경쟁사 프로필
-# ------------------------------------------------------------------
 elif nav == "02 · 경쟁사 프로필":
     section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 브랜드별 통합 크리에이티브 리포트가 누적됩니다.")
 
@@ -709,9 +714,7 @@ elif nav == "02 · 경쟁사 프로필":
                 render_integrated_scorecard(rep)
                 st.divider()
 
-# ------------------------------------------------------------------
 # 03 · 자사 소재 분석
-# ------------------------------------------------------------------
 elif nav == "03 · 자사 소재 분석":
     section_header("03", f"{segment} 자사 광고 소재 분석", f"{segment} 자사 브랜드의 메타 광고 라이브러리 URL이 자동 세팅됩니다.")
 
@@ -728,9 +731,7 @@ elif nav == "03 · 자사 소재 분석":
         st.markdown(f"**자사({segment}) 브랜드 통합 분석 리포트**")
         render_integrated_scorecard(W["own_analyses"]["report"])
 
-# ------------------------------------------------------------------
 # 04 · 메시지 갭 분석 & 위닝 포인트
-# ------------------------------------------------------------------
 elif nav == "04 · 메시지 갭 분석":
     section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트", "경쟁사 누적 프로필과 자사 브랜드 리포트를 비교해 부족한 메시지를 도출합니다.")
 
@@ -827,9 +828,7 @@ elif nav == "04 · 메시지 갭 분석":
 
             if W["gap_analysis"]: st.markdown(W["gap_analysis"])
 
-# ------------------------------------------------------------------
 # 05 · 스토리보드 아이디어
-# ------------------------------------------------------------------
 elif nav == "05 · 스토리보드 아이디어":
     section_header("05", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드 정보를 입력하고 기획안을 생성합니다.")
 
@@ -943,9 +942,7 @@ elif nav == "05 · 스토리보드 아이디어":
                 file_name=f"{segment}_ad_winning_storyboards.md", mime="text/markdown",
             )
 
-# ------------------------------------------------------------------
 # 06 · 히스토리
-# ------------------------------------------------------------------
 elif nav == "06 · 히스토리":
     section_header("06", "히스토리", "완료한 아이디어 추출 결과가 부문 구분과 함께 자동으로 쌓입니다.")
 
