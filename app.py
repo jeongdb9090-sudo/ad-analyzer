@@ -1,3 +1,14 @@
+# 1. 설치 함수를 호출하는 부분을 삭제하거나 주석 처리하세요.
+# install_playwright_browsers() 
+
+# 2. 대신, 수집 실행 함수 내부에서 브라우저가 없으면 그때 설치하게 합니다.
+async def scrape_meta_ad_images(target_url, max_items=24):
+    # 크롤링 시점에 설치 확인 (앱 로딩과는 무관해짐)
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], capture_output=True)
+    # ... 아래 기존 로직 그대로 유지
+
+
+
 import asyncio
 import base64
 import io
