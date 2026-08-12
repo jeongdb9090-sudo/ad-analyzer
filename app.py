@@ -10,6 +10,16 @@ import requests
 import streamlit as st
 from PIL import Image
 
+import os
+
+@st.cache_resource
+def setup_environment():
+    # Playwright 설치 (빌드 시점이 아닌 실행 시점에 딱 한 번만 수행)
+    subprocess.run(["playwright", "install", "chromium"], capture_output=True)
+
+# 앱 시작 시 설치를 시도하되, 이미 설치되어 있으면 1초 만에 넘어가게 함
+setup_environment()
+
 # [속도 개선] 초기 로딩 시 무거운 브라우저 설치 방지
 # 실제 수집 함수 내에서 필요시점에만 설치하도록 수정함
 def ensure_browser_installed():
