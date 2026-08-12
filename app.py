@@ -4,7 +4,8 @@ import json
 import os
 import re
 from datetime import datetime
-import requests
+from urllib.parse import urlparse, parse_qs
+import requestsA
 import streamlit as str_lit
 import streamlit as st
 from PIL import Image
@@ -193,66 +194,112 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# [핵심 업그레이드] 메타 봇 방패를 뚫는 '초정밀 위장 파서' 수집기
+# [핵심 업그레이드] 메타 공식 Ad Library API 연동 수집기
 # ------------------------------------------------------------------
-def scrape_meta_ad_images(target_url, max_items=24):
-    captured_urls = []
+META_GRAPH_VERSION = "v19.0"
+META_ADS_ARCHIVE_ENDPOINT = f"https://graph.facebook.com/{META_GRAPH_VERSION}/ads_archive"
+
+
+def _extract_meta_query_from_library_url(library_url):
+    """
+    기존 UI에 세팅된 '메타 광고 라이브러리 검색 페이지' URL에서
+    page_id(view_all_page_id) 또는 검색어(q), 국가(country)를 추출한다.
+    """
     try:
-        # 실제 최신 맥/윈도우 크롬 브라우저의 정상적인 통신 헤더로 완벽 위장
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Cache-Control": "no-cache",
-            "Pragma": "no-cache",
-            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"macOS"',
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Sec-Fetch-User": "?1",
-            "Upgrade-Insecure-Requests": "1"
-        }
-        
-        session = requests.Session()
-        resp = session.get(target_url, headers=headers, timeout=15)
-        
-        if resp.status_code == 200:
-            html_content = resp.text
-            
-            # 1. 메타 광고 라이브러리 내부의 이미지 CDN 및 JSON 데이터 블록 정밀 스캔
-            pattern = r'https://[^\s<>"]+?\.(?:fbcdn\.net|scontent[^\s<>"]+?)\.(?:jpg|jpeg|png|webp)[^\s<>"]*?'
-            found = re.findall(pattern, html_content)
-            
-            # 만약 일반 HTML에서 안 잡히면 모바일/비디오 포스터 규격도 동시 스캔
-            json_pattern = r'"url":"(https:[^"]+?\.(?:jpg|jpeg|png|webp)[^"]*?)"'
-            found_json = re.findall(json_pattern, html_content)
-            
-            total_found = list(set(found + found_json))
-            
-            seen = set()
-            for u in total_found:
-                try:
-                    clean_u = u.encode().decode('unicode-escape').replace('\\', '')
-                    base_u = clean_u.split('?')[0]
-                    # 아이콘, 프로필, 이모지 등 노이즈 제거 후 진짜 광고 배너만 추출
-                    if base_u not in seen and not any(x in clean_u for x in ["profile", "avatar", "100x100", "emoji", "icon", "scontent-icn", "rsrc.php"]):
-                        seen.add(base_u)
-                        captured_urls.append(clean_u)
-                except Exception:
-                    pass
-                    
+        parsed = urlparse(library_url)
+        params = parse_qs(parsed.query)
+        page_id = params.get("view_all_page_id", [None])[0]
+        search_term = params.get("q", [None])[0]
+        country = params.get("country", ["KR"])[0]
+        return page_id, search_term, country
+    except Exception:
+        return None, None, "KR"
+
+
+def fetch_meta_ad_creatives(library_url, access_token, max_items=24):
+    """
+    메타 공식 Ad Library API(ads_archive)로 광고 소재 메타데이터를 가져온다.
+    기존의 '봇 차단 우회' 방식 스크레이핑을 대체하는 공식 연동 방식.
+
+    반환값: (ads_list, error_message)
+      ads_list 항목 예: {id, page_name, ad_creative_bodies, ad_snapshot_url, ...}
+    """
+    if not access_token:
+        return [], "Meta Access Token이 설정되지 않았습니다. 상단에 토큰을 입력해주세요."
+
+    page_id, search_term, country = _extract_meta_query_from_library_url(library_url)
+    if not page_id and not search_term:
+        return [], "URL에서 page_id 또는 검색어(q)를 찾지 못했습니다. 메타 광고 라이브러리 링크 형식을 확인해주세요."
+
+    fields = ",".join([
+        "id", "page_name", "ad_creative_bodies", "ad_creative_link_titles",
+        "ad_creative_link_descriptions", "ad_snapshot_url",
+        "ad_delivery_start_time", "ad_delivery_stop_time", "publisher_platforms",
+    ])
+
+    params = {
+        "access_token": access_token,
+        "ad_type": "ALL",
+        "ad_active_status": "ALL",
+        "ad_reached_countries": json.dumps([country]),
+        "fields": fields,
+        "limit": min(max_items, 100),
+    }
+    if page_id:
+        params["search_page_ids"] = json.dumps([page_id])
+    else:
+        params["search_terms"] = search_term
+
+    results = []
+    url = META_ADS_ARCHIVE_ENDPOINT
+    use_params = params
+
+    try:
+        while url and len(results) < max_items:
+            resp = requests.get(url, params=use_params, timeout=15)
+            data = resp.json()
+
+            if resp.status_code != 200:
+                err_msg = data.get("error", {}).get("message", str(data))
+                return results, f"메타 API 오류: {err_msg}"
+
+            results.extend(data.get("data", []))
+            next_url = (data.get("paging") or {}).get("next")
+            url = next_url
+            use_params = None  # next 링크에 모든 파라미터가 이미 포함되어 있음
+
+        return results[:max_items], None
     except Exception as e:
-        st.warning(f"메타 자동 수집 통신 참고: {e}")
-        
-    return captured_urls[:max_items]
+        return results, f"메타 API 통신 오류: {e}"
+
+
+def fetch_snapshot_preview_image(snapshot_url):
+    """
+    개별 광고의 공개 스냅샷 페이지(ad_snapshot_url)는 메타가 임베드/미리보기 용도로
+    공개 제공하는 페이지이므로, og:image 메타태그에서 대표 이미지 1장을 가져온다.
+    (검색 결과 페이지를 직접 스크레이핑하는 것과 달리 봇 차단 우회가 필요 없는 공개 리소스)
+    """
+    if not snapshot_url:
+        return None
+    try:
+        resp = requests.get(snapshot_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        if resp.status_code != 200:
+            return None
+        soup = BeautifulSoup(resp.text, "html.parser")
+        og_image = soup.find("meta", property="og:image")
+        if og_image and og_image.get("content"):
+            return og_image["content"]
+        return None
+    except Exception:
+        return None
 
 
 def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
     try:
         pil_images = []
         for b in images_bytes_list[:12]:
+            if not b:
+                continue
             try:
                 img = Image.open(io.BytesIO(b)).convert("RGB")
                 img.thumbnail(thumb_size)
@@ -417,7 +464,7 @@ def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes
 # [소재 수집 UI]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
-    tab1, tab2 = st.tabs(["🚀 메타 광고 라이브러리 자동 수집", "📁 예비 업로드"])
+    tab1, tab2 = st.tabs(["🚀 메타 광고 라이브러리 자동 수집 (공식 API)", "📁 예비 업로드"])
     
     sess_key = f"{prefix}_items_{selected_comp}"
     if sess_key not in st.session_state:
@@ -430,36 +477,50 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             key=f"{prefix}_meta_url_input_{selected_comp}"
         )
         if st.button("🚀 전체 라이브 소재 자동 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
+            access_token = st.session_state.get("meta_access_token", "").strip()
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
+            elif not access_token:
+                st.warning("상단에 메타(Meta) Access Token을 입력해주세요. (Ad Library API 사용에 필요)")
             else:
-                with st.spinner(f"[{selected_comp}] 메타 광고 라이브러리에서 실시간 광고 배너를 수집 중입니다..."):
-                    img_urls = scrape_meta_ad_images(meta_url.strip(), max_items=24)
-                    
-                    if not img_urls:
-                        st.info(f"⚠️ [{selected_comp}] 라이브 광고 이미지 주소를 감지하지 못했습니다. 메타 보안 정책이 매우 엄격할 경우, [예비 업로드] 탭을 활용해 주시면 동일하게 완벽한 분석이 가능합니다.")
+                with st.spinner(f"[{selected_comp}] 메타 공식 Ad Library API로 소재를 수집 중입니다..."):
+                    ads, err = fetch_meta_ad_creatives(meta_url.strip(), access_token, max_items=24)
+
+                    if err:
+                        st.error(err)
+
+                    if not ads:
+                        st.info(f"⚠️ [{selected_comp}] 조건에 맞는 활성 광고를 찾지 못했습니다. [예비 업로드] 탭을 활용해 주시면 동일하게 분석이 가능합니다.")
                         st.session_state[sess_key] = []
                     else:
-                        st.session_state[sess_key] = []
-                        seen_hashes = set()
-                        
-                        for idx, url in enumerate(img_urls, start=1):
-                            try:
-                                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-                                if resp.status_code == 200:
-                                    content = resp.content
-                                    chash = len(content)
-                                    if chash not in seen_hashes and chash > 1000:
-                                        seen_hashes.add(chash)
-                                        fn = f"ad_{idx}.png"
-                                        st.session_state[sess_key].append({
-                                            "id": f"{idx}_{chash}",
-                                            "fn": fn,
-                                            "bytes": content
-                                        })
-                            except Exception:
-                                pass
-                        st.success(f"[{selected_comp}] 운영 중인 이미지 소재 총 {len(st.session_state[sess_key])}건 자동 수집 완료!")
+                        collected_items = []
+                        for idx, ad in enumerate(ads, start=1):
+                            snapshot_url = ad.get("ad_snapshot_url")
+                            img_url = fetch_snapshot_preview_image(snapshot_url)
+                            img_bytes = None
+                            if img_url:
+                                try:
+                                    img_resp = requests.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+                                    if img_resp.status_code == 200:
+                                        img_bytes = img_resp.content
+                                except Exception:
+                                    pass
+
+                            collected_items.append({
+                                "id": ad.get("id", str(idx)),
+                                "fn": f"ad_{idx}.png",
+                                "bytes": img_bytes,
+                                "body": " / ".join(ad.get("ad_creative_bodies") or []),
+                                "page_name": ad.get("page_name", ""),
+                                "snapshot_url": snapshot_url,
+                            })
+
+                        st.session_state[sess_key] = collected_items
+                        with_image = [it for it in collected_items if it["bytes"]]
+                        st.success(
+                            f"[{selected_comp}] 활성 광고 {len(ads)}건 조회 완료 "
+                            f"(이미지 확보 {len(with_image)}건 / 텍스트만 확보 {len(ads) - len(with_image)}건)"
+                        )
 
     with tab2:
         uploaded_files = st.file_uploader(
@@ -484,7 +545,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
     
     if items:
         st.divider()
-        st.markdown(f"**수집된 소재 이미지 ({len(items)}건) — 타겟 연령대가 다른 소재는 ❌ 삭제하세요**")
+        st.markdown(f"**수집된 소재 ({len(items)}건) — 타겟 연령대가 다른 소재는 ❌ 삭제하세요**")
 
         cols_per_row = 4
         items_to_remove = []
@@ -502,7 +563,14 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         if st.button("❌ 삭제", key=f"del_{item['id']}_{selected_comp}"):
                             items_to_remove.append(item['id'])
 
-                    st.image(item["bytes"], use_container_width=True)
+                    if item.get("bytes"):
+                        st.image(item["bytes"], use_container_width=True)
+                    else:
+                        st.caption("🖼️ 이미지 미리보기 실패")
+                        if item.get("snapshot_url"):
+                            st.markdown(f"[원본 광고 보기]({item['snapshot_url']})")
+                        if item.get("body"):
+                            st.caption(item["body"][:80])
 
         if items_to_remove:
             st.session_state[sess_key] = [it for it in st.session_state[sess_key] if it['id'] not in items_to_remove]
@@ -511,29 +579,32 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
         st.divider()
         if st.button(f"'{selected_comp}' 전체 브랜드 통합 분석 실행", type="primary", key=f"{prefix}_analyze_btn_{selected_comp}"):
             if not st.session_state.get("current_api_key"):
-                st.error("상단에서 API Key를 입력해 주세요.")
+                st.error("상단에서 AI API Key를 입력해 주세요.")
             else:
                 current_items = st.session_state[sess_key]
                 if not current_items:
                     st.warning("분석할 소재가 없습니다. 먼저 수집해 주세요.")
                 else:
                     with st.spinner(f"[{st.session_state['current_ai_provider']}] '{selected_comp}' 브랜드 소재 통째 캡처 통합 분석 중..."):
-                        raw_bytes_list = [it["bytes"] for it in current_items]
+                        raw_bytes_list = [it["bytes"] for it in current_items if it.get("bytes")]
 
-                        try:
-                            report = run_brand_integrated_analysis(
-                                st.session_state['current_ai_provider'],
-                                st.session_state['current_api_key'],
-                                selected_comp,
-                                raw_bytes_list
-                            )
-                            on_complete({
-                                "brand_name": selected_comp,
-                                "count": len(current_items),
-                                "report": report
-                            })
-                        except Exception as e:
-                            st.error(f"통합 분석 중 오류 발생: {e}")
+                        if not raw_bytes_list:
+                            st.warning("분석 가능한 이미지가 없습니다. [예비 업로드] 탭에서 이미지를 추가해주세요.")
+                        else:
+                            try:
+                                report = run_brand_integrated_analysis(
+                                    st.session_state['current_ai_provider'],
+                                    st.session_state['current_api_key'],
+                                    selected_comp,
+                                    raw_bytes_list
+                                )
+                                on_complete({
+                                    "brand_name": selected_comp,
+                                    "count": len(current_items),
+                                    "report": report
+                                })
+                            except Exception as e:
+                                st.error(f"통합 분석 중 오류 발생: {e}")
 
 
 # ------------------------------------------------------------------
@@ -560,12 +631,15 @@ with top_col2:
 
 with top_col3:
     default_key = ""
-    if ai_provider == "Gemini (Google)" and "GEMINI_API_KEY" in st.secrets:
-        default_key = st.secrets["GEMINI_API_KEY"]
-    elif ai_provider == "ChatGPT (OpenAI)" and "OPENAI_API_KEY" in st.secrets:
-        default_key = st.secrets["OPENAI_API_KEY"]
-    elif ai_provider == "Claude (Anthropic)" and "ANTHROPIC_API_KEY" in st.secrets:
-        default_key = st.secrets["ANTHROPIC_API_KEY"]
+    try:
+        if ai_provider == "Gemini (Google)" and "GEMINI_API_KEY" in st.secrets:
+            default_key = st.secrets["GEMINI_API_KEY"]
+        elif ai_provider == "ChatGPT (OpenAI)" and "OPENAI_API_KEY" in st.secrets:
+            default_key = st.secrets["OPENAI_API_KEY"]
+        elif ai_provider == "Claude (Anthropic)" and "ANTHROPIC_API_KEY" in st.secrets:
+            default_key = st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        pass
 
     placeholder_text = {
         "Gemini (Google)": "Gemini API 키 (AIzaSy...)",
@@ -581,6 +655,34 @@ with top_col3:
         key="main_ai_api_key_input"
     )
     st.session_state["current_api_key"] = input_api_key
+
+# ------------------------------------------------------------------
+# 메타(Meta) Ad Library API Access Token 입력
+# ------------------------------------------------------------------
+meta_token_col1, meta_token_col2 = st.columns([3, 2])
+with meta_token_col1:
+    default_meta_token = ""
+    try:
+        if "META_ACCESS_TOKEN" in st.secrets:
+            default_meta_token = st.secrets["META_ACCESS_TOKEN"]
+    except Exception:
+        pass
+
+    meta_access_token = st.text_input(
+        "Meta Ad Library API Access Token (ads_read 권한)",
+        value=default_meta_token,
+        type="password",
+        placeholder="developers.facebook.com > Graph API Explorer 에서 발급",
+        key="meta_access_token_input",
+    )
+    st.session_state["meta_access_token"] = meta_access_token
+with meta_token_col2:
+    st.caption(
+        "발급 방법: Meta for Developers → 앱 생성(비즈니스 유형) → "
+        "Graph API Explorer → 권한에 **ads_read** 추가 → 토큰 생성"
+    )
+
+st.divider()
 
 # ------------------------------------------------------------------
 # 사이드바
