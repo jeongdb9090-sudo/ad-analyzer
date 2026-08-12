@@ -5,7 +5,7 @@ import os
 import re
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
-import requestsA
+import requests
 import streamlit as str_lit
 import streamlit as st
 from PIL import Image
