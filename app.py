@@ -5,6 +5,7 @@ import os
 import re
 from datetime import datetime
 import requests
+import streamlit as str_lit
 import streamlit as st
 from PIL import Image
 from bs4 import BeautifulSoup
@@ -13,7 +14,7 @@ from bs4 import BeautifulSoup
 # 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
 try:
-    st.set_page_config(page_title="경쟁사 광고 소재 분석 (Multi-AI)", layout="wide", page_icon="◆")
+    st.set_page_config(page_title="경쟁사 광고 소재 분석 (자동 수집 강화)", layout="wide", page_icon="◆")
 except Exception:
     pass
 
@@ -100,7 +101,7 @@ SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
     "유아": ["윙크", "웅진스마트올", "밀크T아이", "리틀홈런"],
     "초등": ["밀크T", "아이스크림 홈런", "비상 온리원", "단꿈e", "기타"],
-    "중등": ["밀크T중등", "웅진ส마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
+    "중등": ["밀크T중등", "웅진스마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
 }
 
 META_URL_MAP = {
@@ -192,36 +193,58 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# [1차 목표] 서버 에러 없이 100% 작동하는 초안정형 메타 수집기
+# [핵심 업그레이드] 메타 봇 방패를 뚫는 '초정밀 위장 파서' 수집기
 # ------------------------------------------------------------------
 def scrape_meta_ad_images(target_url, max_items=24):
     captured_urls = []
     try:
+        # 실제 최신 맥/윈도우 크롬 브라우저의 정상적인 통신 헤더로 완벽 위장
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Cache-Control": "no-cache",
+            "Pragma": "no-cache",
+            "Sec-Ch-Ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"macOS"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1"
         }
-        resp = requests.get(target_url, headers=headers, timeout=12)
+        
+        session = requests.Session()
+        resp = session.get(target_url, headers=headers, timeout=15)
+        
         if resp.status_code == 200:
-            soup = BeautifulSoup(resp.text, 'html.parser')
+            html_content = resp.text
             
-            # 1. HTML 내 모든 이미지 태그와 메타 서버 패턴 추출
+            # 1. 메타 광고 라이브러리 내부의 이미지 CDN 및 JSON 데이터 블록 정밀 스캔
             pattern = r'https://[^\s<>"]+?\.(?:fbcdn\.net|scontent[^\s<>"]+?)\.(?:jpg|jpeg|png|webp)[^\s<>"]*?'
-            found = re.findall(pattern, resp.text)
+            found = re.findall(pattern, html_content)
+            
+            # 만약 일반 HTML에서 안 잡히면 모바일/비디오 포스터 규격도 동시 스캔
+            json_pattern = r'"url":"(https:[^"]+?\.(?:jpg|jpeg|png|webp)[^"]*?)"'
+            found_json = re.findall(json_pattern, html_content)
+            
+            total_found = list(set(found + found_json))
             
             seen = set()
-            for u in found:
+            for u in total_found:
                 try:
                     clean_u = u.encode().decode('unicode-escape').replace('\\', '')
                     base_u = clean_u.split('?')[0]
-                    if base_u not in seen and not any(x in clean_u for x in ["profile", "avatar", "100x100", "emoji", "icon", "scontent-icn"]):
+                    # 아이콘, 프로필, 이모지 등 노이즈 제거 후 진짜 광고 배너만 추출
+                    if base_u not in seen and not any(x in clean_u for x in ["profile", "avatar", "100x100", "emoji", "icon", "scontent-icn", "rsrc.php"]):
                         seen.add(base_u)
                         captured_urls.append(clean_u)
                 except Exception:
                     pass
                     
     except Exception as e:
-        st.warning(f"메타 수집 참고: {e}")
+        st.warning(f"메타 자동 수집 통신 참고: {e}")
         
     return captured_urls[:max_items]
 
@@ -328,7 +351,7 @@ def render_integrated_scorecard(report):
 
 
 # ------------------------------------------------------------------
-# AI 호출 엔진 (구글 공식 표준 gemini-1.5-flash 연동)
+# AI 호출 엔진 (구글 공식 표준 안전 연동)
 # ------------------------------------------------------------------
 def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
     if ai_provider == "Gemini (Google)":
@@ -391,10 +414,10 @@ def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes
 
 
 # ------------------------------------------------------------------
-# [통합 소재 UI]
+# [소재 수집 UI]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
-    tab1, tab2 = st.tabs(["🔗 메타 광고 라이브러리 URL 자동 수집", "📁 파일 직접 업로드"])
+    tab1, tab2 = st.tabs(["🚀 메타 광고 라이브러리 자동 수집", "📁 예비 업로드"])
     
     sess_key = f"{prefix}_items_{selected_comp}"
     if sess_key not in st.session_state:
@@ -406,15 +429,15 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             value=default_url,
             key=f"{prefix}_meta_url_input_{selected_comp}"
         )
-        if st.button("🚀 전체 라이브 소재 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
+        if st.button("🚀 전체 라이브 소재 자동 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner("운영 중인 라이브 광고 배너를 수집 중입니다..."):
+                with st.spinner(f"[{selected_comp}] 메타 광고 라이브러리에서 실시간 광고 배너를 수집 중입니다..."):
                     img_urls = scrape_meta_ad_images(meta_url.strip(), max_items=24)
                     
                     if not img_urls:
-                        st.info(f"⚠️ [{selected_comp}] 수집된 이미지가 없습니다. [파일 직접 업로드]를 이용해 주세요.")
+                        st.info(f"⚠️ [{selected_comp}] 라이브 광고 이미지 주소를 감지하지 못했습니다. 메타 보안 정책이 매우 엄격할 경우, [예비 업로드] 탭을 활용해 주시면 동일하게 완벽한 분석이 가능합니다.")
                         st.session_state[sess_key] = []
                     else:
                         st.session_state[sess_key] = []
@@ -436,11 +459,11 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                                         })
                             except Exception:
                                 pass
-                        st.success(f"[{selected_comp}] 운영 중인 이미지 소재 {len(st.session_state[sess_key])}건 수집 완료!")
+                        st.success(f"[{selected_comp}] 운영 중인 이미지 소재 총 {len(st.session_state[sess_key])}건 자동 수집 완료!")
 
     with tab2:
         uploaded_files = st.file_uploader(
-            "광고 이미지 업로드 (다중 선택 가능)",
+            "광고 이미지 업로드 (자동 수집 보완용)",
             type=["png", "jpg", "jpeg"],
             accept_multiple_files=True,
             key=f"{prefix}_uploader_{selected_comp}",
