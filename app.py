@@ -10,28 +10,15 @@ import requests
 import streamlit as st
 from PIL import Image
 
-# 서버 구동 시 playwright 크롬 브라우저 자동 설치 (수집 오류 원천 차단)
-try:
-    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-except Exception:
-    pass
-
-# ------------------------------------------------------------------
-# Playwright 브라우저 설치 (캐시 처리로 로딩 속도 최적화)
-# ------------------------------------------------------------------
-@st.cache_resource
-def install_playwright_browsers():
-    try:
-        subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
-    except Exception:
-        pass
-
-install_playwright_browsers()
-
 # ------------------------------------------------------------------
 # 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
-st.set_page_config(page_title="경쟁사 광고 소재 분석 (Multi-AI)", layout="wide", page_icon="◆")
+set_page_config_called = False
+try:
+    st.set_page_config(page_title="경쟁사 광고 소재 분석 (Multi-AI)", layout="wide", page_icon="◆")
+    set_page_config_called = True
+except Exception:
+    pass
 
 st.markdown("""
 <style>
@@ -208,61 +195,34 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# 메타 광고 수집기
+# [핵심 수정] 서버 에러 안 나는 안전한 메타 URL 파싱 수집기 (Playwright 대체)
 # ------------------------------------------------------------------
 async def scrape_meta_ad_images(target_url, max_items=24):
     captured_urls = []
     try:
-        from playwright.async_api import async_playwright
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
-            context = await browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-                viewport={"width": 1280, "height": 800}
-            )
-            page = await context.new_page()
-            await page.route("**/*.{font,woff,woff2,css}", lambda route: route.abort())
-
-            await page.goto(target_url, wait_until="domcontentloaded", timeout=30000)
-            
-            for _ in range(12):
-                await page.mouse.wheel(0, 1800)
-                await page.wait_for_timeout(500)
-
-            extracted = await page.evaluate('''() => {
-                const urls = [];
-                const videoElements = document.querySelectorAll('video');
-                videoElements.forEach(v => {
-                    if (v.poster && (v.poster.includes("scontent") || v.poster.includes("fbcdn"))) {
-                        urls.push(v.poster);
-                    }
-                });
-                const imgElements = document.querySelectorAll('img');
-                imgElements.forEach(img => {
-                    if (img.naturalWidth >= 200 && img.naturalHeight >= 200) {
-                        const src = img.src;
-                        const isProfile = src.includes("profile") || src.includes("avatar") || src.includes("100x100") || src.includes("50x50");
-                        if ((src.includes("scontent") || src.includes("fbcdn")) && !isProfile) {
-                            urls.push(src);
-                        }
-                    }
-                });
-                return urls;
-            }''')
+        # 무거운 브라우저 설치 없이, 메타 광고 라이브러리 공개 API/페이지 HTML 구조 직접 분석
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        }
+        resp = requests.get(target_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            import re
+            # 페이스북/인스타그램 광고 이미지 서버 주소 패턴 정규식 추출
+            pattern = r'https://[^\s<>"]+?\.(?:fbcdn\.net|scontent[^\s<>"]+?)\.(?:jpg|jpeg|png|webp)[^\s<>"]*?'
+            found = re.findall(pattern, resp.text)
             
             seen = set()
-            for u in extracted:
-                base_u = u.split('?')[0] if '?' in u else u
-                if base_u not in seen:
+            for u in found:
+                # 불필요한 이스케이프 문자 정리
+                clean_u = u.encode().decode('unicode-escape').replace('\\', '')
+                base_u = clean_u.split('?')[0]
+                if base_u not in seen and not any(x in clean_u for x in ["profile", "avatar", "100x100", "emoji", "icon"]):
                     seen.add(base_u)
-                    captured_urls.append(u)
-
-            await browser.close()
+                    captured_urls.append(clean_u)
+                    
     except Exception as e:
-        st.warning(f"메타 수집 환경 참고: {e}")
+        st.warning(f"메타 수집 안내: {e}")
         
     return captured_urls[:max_items]
 
@@ -369,29 +329,20 @@ def render_integrated_scorecard(report):
 
 
 # ------------------------------------------------------------------
-# Multi-AI 호환 모델 안전 호출 엔진 (경로 규격 404 차단)
+# AI 호출 엔진 (구글 공식 gemini-1.5-flash 표준 연동)
 # ------------------------------------------------------------------
 def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
     if ai_provider == "Gemini (Google)":
-        from google import genai
-        from google.genai import types
-        client = genai.Client(api_key=api_key)
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
         contents = [prompt_text]
         if collage_bytes:
-            contents.append(types.Part.from_bytes(data=collage_bytes, mime_type="image/jpeg"))
-
-        # 최신 모델 우선 시도 후 404 발생 시 안전한 폴백
-        for model_candidate in ["gemini-2.0-flash", "gemini-1.5-flash"]:
-            try:
-                resp = client.models.generate_content(model=model_candidate, contents=contents)
-                return resp.text
-            except Exception as e:
-                if "404" in str(e):
-                    continue
-                raise e
-        
-        resp = client.models.generate_content(model="gemini-1.5-flash", contents=contents)
+            img = Image.open(io.BytesIO(collage_bytes))
+            contents.append(img)
+            
+        resp = model.generate_content(contents)
         return resp.text
 
     elif ai_provider == "ChatGPT (OpenAI)":
@@ -464,7 +415,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                     img_urls = asyncio.run(scrape_meta_ad_images(meta_url.strip(), max_items=24))
                     
                     if not img_urls:
-                        st.info(f"⚠️ [{selected_comp}] 이미지 배너 소재가 0건이거나 동영상(Video) 위주의 광고로 구동 중입니다.")
+                        st.info(f"⚠️ [{selected_comp}] 이미지 배너 소재가 0건이거나 메타 보안 정책으로 차단되었습니다. [파일 직접 업로드] 탭을 이용해 주세요.")
                         st.session_state[sess_key] = []
                     else:
                         st.session_state[sess_key] = []
@@ -473,16 +424,17 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         for idx, url in enumerate(img_urls, start=1):
                             try:
                                 resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
-                                content = resp.content
-                                chash = len(content)
-                                if chash not in seen_hashes:
-                                    seen_hashes.add(chash)
-                                    fn = f"ad_{idx}.png"
-                                    st.session_state[sess_key].append({
-                                        "id": f"{idx}_{chash}",
-                                        "fn": fn,
-                                        "bytes": content
-                                    })
+                                if resp.status_code == 200:
+                                    content = resp.content
+                                    chash = len(content)
+                                    if chash not in seen_hashes and chash > 1000:
+                                        seen_hashes.add(chash)
+                                        fn = f"ad_{idx}.png"
+                                        st.session_state[sess_key].append({
+                                            "id": f"{idx}_{chash}",
+                                            "fn": fn,
+                                            "bytes": content
+                                        })
                             except Exception:
                                 pass
                         st.success(f"[{selected_comp}] 운영 중인 이미지 소재 {len(st.session_state[sess_key])}건 수집 완료!")
@@ -942,9 +894,7 @@ elif nav == "05 · 스토리보드 아이디어":
                 file_name=f"{segment}_ad_winning_storyboards.md", mime="text/markdown",
             )
 
-# ------------------------------------------------------------------
 # 06 · 히스토리
-# ------------------------------------------------------------------
 elif nav == "06 · 히스토리":
     section_header("06", "히스토리", "완료한 아이디어 추출 결과가 부문 구분과 함께 자동으로 쌓입니다.")
 
@@ -959,7 +909,7 @@ elif nav == "06 · 히스토리":
         with col_h1: st.caption(f"총 {len(filtered)}건의 기록")
         with col_h2:
             if st.button("전체 기록 삭제"):
-                if os.path.exists(HISTORY_FILE): os.remove(HISTORY_FILE)
+                if os.path.exists(HISTORY_FILE): os.path.exists(HISTORY_FILE) and os.remove(HISTORY_FILE)
                 st.rerun()
 
         for i, entry in enumerate(filtered):
