@@ -207,31 +207,45 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# [핵심] Playwright 크롤링 함수 (딜레이 및 안정성 적용)
+# [핵심] Playwright 봇 우회 및 안정성 딜레이가 적용된 크롤링 함수
 # ------------------------------------------------------------------
 def scrape_meta_ads_with_playwright(library_url, max_items=12):
     results = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                ]
             )
             
-            page.goto(library_url, timeout=35000)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                viewport={"width": 1280, "height": 800},
+                locale="ko-KR"
+            )
             
-            # IP 차단 대응 및 렌더링 대기 딜레이
-            time.sleep(4)
+            page = context.new_page()
+            page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
+
+            page.goto(library_url, timeout=45000)
+            
+            # 봇 탐지 회피를 위한 안전 딜레이
+            time.sleep(5)
             
             try:
-                page.wait_for_selector('div[class*="_7j6g"]', timeout=12000)
+                page.wait_for_selector('div[class*="_7j6g"]', timeout=15000)
             except Exception:
                 pass 
 
-            # 스크롤을 천천히 내려서 광고 데이터 로딩 유도
+            # 천천히 스크롤 다운하여 동적 광고 카드 로딩 유도
             for _ in range(3):
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(2)
+                time.sleep(2.5)
 
             ad_cards = page.query_selector_all('div[class*="_7j6g"]')
             
@@ -432,7 +446,7 @@ def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes
 
 
 # ------------------------------------------------------------------
-# [소재 수집 UI] (Playwright 자동 수집 탭 + 예비 업로드 탭)
+# [소재 수집 UI]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🚀 Playwright 자동 크롤링 수집", "📁 예비 업로드"])
