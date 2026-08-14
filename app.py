@@ -4,6 +4,7 @@ import json
 import os
 import re
 import time
+import subprocess
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
 import requests
@@ -11,6 +12,19 @@ import streamlit as str_lit
 import streamlit as st
 from PIL import Image
 from bs4 import BeautifulSoup
+
+# ------------------------------------------------------------------
+# Playwright 브라우저 자동 설치 (스트림릿 클라우드 환경 대응)
+# ------------------------------------------------------------------
+@st.cache_resource
+def install_playwright_browsers():
+    try:
+        subprocess.run(["playwright", "install", "chromium"], check=True)
+    except Exception:
+        pass
+
+install_playwright_browsers()
+
 from playwright.sync_api import sync_playwright
 
 # ------------------------------------------------------------------
@@ -196,41 +210,34 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# [핵심 업그레이드] Playwright 활용 웹 스크레이핑 수집기
+# [핵심] IP 차단 대응 및 딜레이가 포함된 Playwright 수집기
 # ------------------------------------------------------------------
 def scrape_meta_ads_with_playwright(library_url, max_items=12):
-    """
-    Playwright(Headless Browser)를 사용하여 메타 광고 라이브러리 페이지에 접속 후,
-    광고 카드 DOM을 순회하며 이미지와 텍스트 데이터를 추출합니다.
-    * IP 차단 대응 및 동적 렌더링 대기 시간 포함
-    """
     results = []
     try:
         with sync_playwright() as p:
-            # 서버 환경 실행을 위해 headless=True 설정
             browser = p.chromium.launch(headless=True)
             page = browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
             )
             
-            page.goto(library_url, timeout=30000)
+            page.goto(library_url, timeout=35000)
             
-            # IP 차단 및 봇 감지 방지를 위한 충분한 지연 시간 (필요시 조절)
-            time.sleep(3)
+            # [IP 차단 대응] 봇 탐지 회피를 위한 초기 안전 딜레이
+            time.sleep(4)
             
-            # 메타 광고 라이브러리 로딩 대기 (광고 카드 컨테이너 선택자)
-            # ※ 주의: 메타 UI 업데이트에 따라 클래스명(_7j6g 등)이 변경될 수 있으므로 F12로 확인 필요
+            # [CSS 선택자 관리] 동적 로딩 대기
             try:
-                page.wait_for_selector('div[class*="_7j6g"]', timeout=10000)
+                page.wait_for_selector('div[class*="_7j6g"]', timeout=12000)
             except Exception:
-                pass # 요소를 못 찾더라도 아래에서 스크롤을 통해 재시도 유도
+                pass 
 
-            # 스크롤을 내려서 동적으로 광고 카드 더 불러오기
-            for _ in range(2):
+            # 스크롤을 천천히 내려서 데이터가 렌더링되도록 유도 (속도 조절로 차단 방지)
+            for _ in range(3):
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(1.5)
+                time.sleep(2) # 딜레이 부여
 
-            # 광고 카드 요소 수집 (클래스 이름 변경 시 여기를 수정하세요)
+            # 광고 카드 요소 수집 (클래스명 변경 시 여기 수정 필요)
             ad_cards = page.query_selector_all('div[class*="_7j6g"]')
             
             for idx, card in enumerate(ad_cards[:max_items], start=1):
@@ -433,7 +440,7 @@ def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes
 
 
 # ------------------------------------------------------------------
-# [소재 수집 UI] (Playwright + 예비 업로드)
+# [소재 수집 UI]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🚀 Playwright 자동 크롤링 수집", "📁 예비 업로드"])
@@ -448,18 +455,12 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             value=default_url,
             key=f"{prefix}_meta_url_input_{selected_comp}"
         )
-        
-        st.info(
-            "💡 **스크레이핑 유의사항**\n\n"
-            "1. **CSS 선택자 관리**: 메타는 UI 클래스 이름(예: `_7j6g`)을 무작위로 바꿉니다. 수집이 안 되면 개발자 도구(F12)로 확인 후 코드를 수정해주세요.\n"
-            "2. **IP 차단 대응**: 수집 속도가 너무 빠르면 메타가 봇으로 차단하므로 `time.sleep()` 딜레이를 주거나 **Residential Proxy(가정용 프록시)** 설정이 필요할 수 있습니다."
-        )
 
         if st.button("🚀 전체 라이브 소재 자동 수집 실행 (Playwright)", key=f"{prefix}_crawl_btn", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner(f"[{selected_comp}] 브라우저를 띄워 광고 소재를 수집 중입니다... (잠시 소요)"):
+                with st.spinner(f"[{selected_comp}] 브라우저를 띄워 광고 소재를 수집 중입니다... (안정성 딜레이 적용 중)"):
                     ads, err = scrape_meta_ads_with_playwright(meta_url.strip(), max_items=12)
 
                     if err:
