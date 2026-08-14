@@ -13,25 +13,22 @@ import streamlit as st
 from PIL import Image
 from bs4 import BeautifulSoup
 
-# ------------------------------------------------------------------
-# Playwright 브라우저 자동 설치 (스트림릿 클라우드 환경 대응)
-# ------------------------------------------------------------------
+# 스트림릿 클라우드 서버 환경에서 Playwright 브라우저 자동 설치 보장
 @st.cache_resource
-def install_playwright_browsers():
+def install_playwright():
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception:
         pass
 
-install_playwright_browsers()
-
+install_playwright()
 from playwright.sync_api import sync_playwright
 
 # ------------------------------------------------------------------
 # 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
 try:
-    st.set_page_config(page_title="경쟁사 광고 소재 분석 (Playwright 자동 수집)", layout="wide", page_icon="◆")
+    st.set_page_config(page_title="경쟁사 광고 소재 분석 (Playwright)", layout="wide", page_icon="◆")
 except Exception:
     pass
 
@@ -210,7 +207,7 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# [핵심] IP 차단 대응 및 딜레이가 포함된 Playwright 수집기
+# [핵심] Playwright 크롤링 함수 (딜레이 및 안정성 적용)
 # ------------------------------------------------------------------
 def scrape_meta_ads_with_playwright(library_url, max_items=12):
     results = []
@@ -223,21 +220,19 @@ def scrape_meta_ads_with_playwright(library_url, max_items=12):
             
             page.goto(library_url, timeout=35000)
             
-            # [IP 차단 대응] 봇 탐지 회피를 위한 초기 안전 딜레이
+            # IP 차단 대응 및 렌더링 대기 딜레이
             time.sleep(4)
             
-            # [CSS 선택자 관리] 동적 로딩 대기
             try:
                 page.wait_for_selector('div[class*="_7j6g"]', timeout=12000)
             except Exception:
                 pass 
 
-            # 스크롤을 천천히 내려서 데이터가 렌더링되도록 유도 (속도 조절로 차단 방지)
+            # 스크롤을 천천히 내려서 광고 데이터 로딩 유도
             for _ in range(3):
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
-                time.sleep(2) # 딜레이 부여
+                time.sleep(2)
 
-            # 광고 카드 요소 수집 (클래스명 변경 시 여기 수정 필요)
             ad_cards = page.query_selector_all('div[class*="_7j6g"]')
             
             for idx, card in enumerate(ad_cards[:max_items], start=1):
@@ -376,9 +371,6 @@ def render_integrated_scorecard(report):
     st.markdown(html, unsafe_allow_html=True)
 
 
-# ------------------------------------------------------------------
-# AI 호출 엔진
-# ------------------------------------------------------------------
 def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
     if ai_provider == "Gemini (Google)":
         import google.generativeai as genai
@@ -440,7 +432,7 @@ def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes
 
 
 # ------------------------------------------------------------------
-# [소재 수집 UI]
+# [소재 수집 UI] (Playwright 자동 수집 탭 + 예비 업로드 탭)
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
     tab1, tab2 = st.tabs(["🚀 Playwright 자동 크롤링 수집", "📁 예비 업로드"])
@@ -460,7 +452,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner(f"[{selected_comp}] 브라우저를 띄워 광고 소재를 수집 중입니다... (안정성 딜레이 적용 중)"):
+                with st.spinner(f"[{selected_comp}] 브라우저를 띄워 광고 소재를 수집 중입니다... (딜레이 적용)"):
                     ads, err = scrape_meta_ads_with_playwright(meta_url.strip(), max_items=12)
 
                     if err:
