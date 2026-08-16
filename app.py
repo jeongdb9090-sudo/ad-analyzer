@@ -25,7 +25,7 @@ install_playwright()
 from playwright.sync_api import sync_playwright
 
 # ------------------------------------------------------------------
-# 기본 설정 및 디자인 CSS (셀렉트박스/인풋창/팝오버 배경 백색 완벽 고정)
+# 기본 설정 및 디자인 CSS (어두운 배경 컬러 #191B29 원천 차단 및 백색 고정)
 # ------------------------------------------------------------------
 try:
     st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
@@ -90,21 +90,25 @@ h1, h2, h3, h4, h5, h6 {
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 
-/* [핵심] 모든 셀렉트박스, 텍스트 입력창, 팝오버 내부 컨테이너 배경을 백색으로 완전 강제 고정 */
+/* [핵심 수정] 셀렉트박스, 인풋 필드, 팝오버, 드롭다운 전체에 걸쳐 어두운 배경(#191B29 등)을 백색으로 완전 교체 및 강제 */
 div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea,
 [data-testid="stNumberInput"] input,
 div[data-baseweb="popover"],
-div[data-testid="stPopoverBody"] {
+div[data-testid="stPopoverBody"],
+div[data-baseweb="menu"],
+div[data-baseweb="tag"] {
     background-color: #FFFFFF !important;
     color: var(--ink) !important;
     border-color: var(--border) !important;
 }
 
 div[data-baseweb="select"] span,
-div[data-baseweb="select"] div {
+div[data-baseweb="select"] div,
+[data-baseweb="select"] * {
+    background-color: transparent !important;
     color: var(--ink) !important;
 }
 
@@ -161,7 +165,7 @@ META_URL_MAP = {
     "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=552773944780211",
     "단꿈e": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=350531981486027",
     "밀크T중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=101376489315136",
-    "웅진스마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
+    "웅진ส마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
     "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=989750591106584",
     "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
 }
@@ -647,7 +651,7 @@ if nav == "01 · 경쟁사 소재 분석":
                     st.rerun()
     with del_col:
         st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
-        with st.popover("🗑️ 경쟁사 삭제", use_container_width=True):
+        with st.popover("❌ 경쟁사 삭제", use_container_width=True):
             st.markdown("##### 삭제할 경쟁사 선택")
             target_to_del = st.selectbox("삭제 대상", competitors, key=f"{segment}_del_select")
             if st.button("선택 경쟁사 삭제", key=f"{segment}_del_btn", use_container_width=True):
