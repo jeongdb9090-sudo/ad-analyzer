@@ -1,5 +1,8 @@
 streamlit
-requests
-beautifulsoup4
-Pillow
 playwright
+beautifulsoup4
+requests
+Pillow
+google-generativeai
+openai
+anthropic
