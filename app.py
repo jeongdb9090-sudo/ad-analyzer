@@ -25,7 +25,7 @@ install_playwright()
 from playwright.sync_api import sync_playwright
 
 # ------------------------------------------------------------------
-# 기본 설정 및 디자인 CSS
+# 기본 설정 및 디자인 CSS (셀렉트박스/인풋창 배경 백색 통일)
 # ------------------------------------------------------------------
 try:
     st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
@@ -90,21 +90,22 @@ h1, h2, h3, h4, h5, h6 {
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 
-/* 셀렉트박스 / 텍스트 인풋 / 텍스트에어리어 가독성 및 밝은 배경 통일 */
-[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+/* 모든 셀렉트박스, 인풋창, 드롭다운 배경을 확실한 밝은 색(백색)으로 강제 고정 */
+div[data-baseweb="select"] > div,
+div[data-baseweb="base-input"] > input,
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea,
 [data-testid="stNumberInput"] input {
     background-color: #FFFFFF !important;
     color: var(--ink) !important;
-    border: 1px solid var(--border) !important;
+    border-color: var(--border) !important;
 }
-[data-testid="stSelectbox"] div[data-baseweb="select"] span,
-[data-testid="stSelectbox"] div[data-baseweb="select"] div {
+
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] div {
     color: var(--ink) !important;
 }
 
-/* 셀렉트박스 드롭다운 옵션 목록 */
 div[data-baseweb="popover"] ul,
 div[data-baseweb="popover"] li,
 div[role="listbox"],
@@ -176,9 +177,6 @@ COMPETITORS_FILE = os.path.join(BASE_DIR, "ad_signal_competitors.json")
 PROFILES_FILE = os.path.join(BASE_DIR, "ad_signal_profiles.json")
 SELECTORS_FILE = os.path.join(BASE_DIR, "ad_signal_selectors.json")
 
-# ------------------------------------------------------------------
-# 메타 광고 라이브러리 크롤링용 CSS 선택자 설정
-# ------------------------------------------------------------------
 DEFAULT_SELECTORS = {
     "ad_card_candidates": [
         'div[class*="_7jyg"]',
@@ -187,7 +185,7 @@ DEFAULT_SELECTORS = {
         'div[data-testid="ad_library_card"]',
     ],
     "image_domain_keywords": ["scontent", "fbcdn"],
-    "image_min_width": 100,
+    "image_min_width": 150,  # 프로필 아이콘 등 작은 썸네일(소형 이미지) 필터링 강화
     "max_scroll_count": 8,
     "scroll_wait_ms": 2000,
     "initial_wait_timeout_ms": 15000,
@@ -203,36 +201,28 @@ def load_selectors():
     merged.update(data)
     return merged
 
-def save_selectors(data):
-    save_json(SELECTORS_FILE, data)
-
+def save_selectors(data): save_json(SELECTORS_FILE, data)
 def reset_selectors():
     data = json.loads(json.dumps(DEFAULT_SELECTORS))
     save_json(SELECTORS_FILE, data)
     return data
 
 def load_json(path, default):
-    if not os.path.exists(path):
-        return default
+    if not os.path.exists(path): return default
     try:
-        with open(path, "r", encoding="utf-8") as fp:
-            return json.load(fp)
-    except Exception:
-        return default
+        with open(path, "r", encoding="utf-8") as fp: return json.load(fp)
+    except Exception: return default
 
 def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as fp:
-        json.dump(data, fp, ensure_ascii=False, indent=2)
+    with open(path, "w", encoding="utf-8") as fp: json.dump(data, fp, ensure_ascii=False, indent=2)
 
 def load_history(): return load_json(HISTORY_FILE, [])
-
 def save_history_entry(entry):
     history = load_history()
     history.insert(0, entry)
     save_json(HISTORY_FILE, history)
 
 def load_all_brands(): return load_json(BRAND_FILE, {})
-
 def save_brand(segment, data):
     all_brands = load_all_brands()
     all_brands[segment] = data
@@ -255,7 +245,6 @@ def add_competitor(segment, name):
         save_json(COMPETITORS_FILE, data)
 
 def load_all_profiles(): return load_json(PROFILES_FILE, {})
-
 def save_profile_entry(segment, competitor, entry):
     data = load_all_profiles()
     data.setdefault(segment, {}).setdefault(competitor, []).insert(0, entry)
@@ -263,7 +252,7 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# Playwright 크롤링 함수
+# Playwright 크롤링 함수 (프로필 아이콘 정밀 필터링 로직 포함)
 # ------------------------------------------------------------------
 _EXTRACT_ADS_JS = """
 (config) => {
@@ -290,14 +279,32 @@ _EXTRACT_ADS_JS = """
         imgs.forEach((img) => {
             const src = img.currentSrc || img.src || '';
             if (!src || seen.has(src)) return;
+
             let renderedWidth = img.naturalWidth || 0;
+            let renderedHeight = img.naturalHeight || 0;
             if (!renderedWidth) {
-                try { renderedWidth = Math.round(img.getBoundingClientRect().width) || 0; } catch (e) {}
+                try { 
+                    const rect = img.getBoundingClientRect();
+                    renderedWidth = Math.round(rect.width) || 0;
+                    renderedHeight = Math.round(rect.height) || 0;
+                } catch (e) {}
             }
             if (!renderedWidth) renderedWidth = img.width || 0;
+            if (!renderedHeight) renderedHeight = img.height || 0;
+
+            // 프로필 아이콘 및 작은 아바타/로고 이미지 방지 (정사각형에 가깝거나 일정 크기 이하인 경우 제외)
             if (renderedWidth > 0 && renderedWidth < image_min_width) return;
+            if (renderedHeight > 0 && renderedHeight < image_min_width) return;
+            
+            // 비율이 1:1에 가깝고 크기가 작은 이미지는 보통 프로필 로고나 아이콘이므로 제외
+            if (renderedWidth > 0 && renderedHeight > 0) {
+                const ratio = renderedWidth / renderedHeight;
+                if (ratio > 0.8 && ratio < 1.2 && renderedWidth < 180) return;
+            }
+
             const matchesDomain = image_domain_keywords.some((k) => src.includes(k));
             if (!matchesDomain) return;
+
             seen.add(src);
             let bodyText = '';
             try { bodyText = (card.innerText || '').slice(0, 300); } catch (e) {}
@@ -318,9 +325,11 @@ def _upgrade_image_resolution(url):
     except Exception:
         return url
 
-def _scrape_once(library_url, max_items, cfg):
+def _scrape_once(library_url, max_items, cfg, status_callback=None):
     results = []
     debug_info = {"used_selector": None, "card_count": 0}
+    
+    if status_callback: status_callback("브라우저 엔진을 구동하고 있습니다...")
     with sync_playwright() as p:
         browser = p.chromium.launch(
             headless=True,
@@ -335,6 +344,8 @@ def _scrape_once(library_url, max_items, cfg):
             page = context.new_page()
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
             page.route("**/*", lambda route: route.abort() if route.request.resource_type in ("media", "font") else route.continue_())
+            
+            if status_callback: status_callback("메타 광고 라이브러리 페이지에 접속 중입니다...")
             page.goto(library_url, timeout=45000, wait_until="domcontentloaded")
             time.sleep(5)
             if page.is_closed(): raise RuntimeError("브라우저 종료됨")
@@ -342,19 +353,26 @@ def _scrape_once(library_url, max_items, cfg):
                 page.wait_for_selector(", ".join(cfg["ad_card_candidates"]), timeout=cfg.get("initial_wait_timeout_ms", 15000))
             except Exception:
                 pass
+            
+            if status_callback: status_callback("활성 광고 데이터를 스크롤하여 불러오는 중...")
             last_height = 0
-            for _ in range(cfg.get("max_scroll_count", 8)):
+            for i in range(cfg.get("max_scroll_count", 8)):
                 if page.is_closed(): break
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 time.sleep(cfg.get("scroll_wait_ms", 2000) / 1000)
                 new_height = page.evaluate("document.body.scrollHeight")
                 if new_height == last_height: break
                 last_height = new_height
+            
             time.sleep(1.5)
+            if status_callback: status_callback("광고 소재 이미지 및 텍스트를 추출하고 있습니다...")
             extracted = page.evaluate(_EXTRACT_ADS_JS, cfg)
             debug_info["used_selector"] = extracted.get("usedSelector")
             debug_info["card_count"] = extracted.get("cardCount", 0)
-            for idx, item in enumerate(extracted.get("items", [])[:max_items], start=1):
+            
+            total_items = extracted.get("items", [])[:max_items]
+            for idx, item in enumerate(total_items, start=1):
+                if status_callback: status_callback(f"고화질 광고 소재 이미지 다운로드 중 ({idx}/{len(total_items)}건)...")
                 img_url = item.get("src")
                 body_text = item.get("bodyText", "")
                 img_bytes = None
@@ -374,16 +392,16 @@ def _scrape_once(library_url, max_items, cfg):
             except Exception: pass
     return results, debug_info
 
-def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None, _retry=True):
+def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None, status_callback=None, _retry=True):
     cfg = selectors or load_selectors()
     try:
-        results, debug_info = _scrape_once(library_url, max_items, cfg)
+        results, debug_info = _scrape_once(library_url, max_items, cfg, status_callback)
         return results, debug_info, None
     except Exception as e:
         err_text = str(e)
         if ("closed" in err_text or "종료" in err_text) and _retry:
             time.sleep(2)
-            return scrape_meta_ads_with_playwright(library_url, max_items, cfg, _retry=False)
+            return scrape_meta_ads_with_playwright(library_url, max_items, cfg, status_callback, _retry=False)
         return [], {"used_selector": None, "card_count": 0}, f"오류 발생: {err_text}"
 
 def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
@@ -502,13 +520,24 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner(""):
-                    ads, debug_info, err = scrape_meta_ads_with_playwright(meta_url.strip(), max_items=12, selectors=load_selectors())
-                    if err: st.error(err)
-                    if not ads:
+                # 실시간 단계별 진행 상황을 보여주는 st.status 컴포넌트 적용
+                with st.status(f"'{selected_comp}' 광고 라이브러리 수집 진행 중...", expanded=True) as status_box:
+                    def update_status(msg):
+                        status_box.update(label=msg, state="running")
+
+                    ads, debug_info, err = scrape_meta_ads_with_playwright(
+                        meta_url.strip(), max_items=12, selectors=load_selectors(), status_callback=update_status
+                    )
+
+                    if err:
+                        status_box.update(label="수집 중 오류 발생", state="error")
+                        st.error(err)
+                    elif not ads:
+                        status_box.update(label="수집된 활성 광고가 없습니다.", state="complete")
                         st.info(f"⚠️ [{selected_comp}] 활성 광고를 수집하지 못했습니다. [예비 업로드] 탭을 활용해 주세요.")
                         st.session_state[sess_key] = []
                     else:
+                        status_box.update(label=f"'{selected_comp}' 총 {len(ads)}건 수집 완료!", state="complete")
                         st.session_state[sess_key] = ads
                         st.success(f"[{selected_comp}] 총 {len(ads)}건 수집 완료")
 
@@ -520,7 +549,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
     items = st.session_state[sess_key]
     if items:
         st.divider()
-        st.markdown(f"**수집된 소재 ({len(items)}건)**")
+        st.markdown(f"**수집된 소재 ({len(items)}건) — 타겟 연령대가 다른 소재는 ❌ 삭제하세요**")
         items_to_remove = []
         for i in range(0, len(items), 6):
             row_items = items[i:i + 6]
@@ -607,10 +636,9 @@ if nav == "01 · 경쟁사 소재 분석":
             if st.button("추가", key=f"{segment}_new_comp_btn", use_container_width=True):
                 if new_comp.strip():
                     add_competitor(segment, new_comp.strip())
-                    st.success(f"'{new_comp.strip()}' 추가되었습니다.")
+                    st.toast(f"'{new_comp.strip()}' 추가되었습니다.")
                     st.rerun()
 
-    # 새로 추가된 경쟁사 등 URL 맵에 없는 경우 빈 값 처리
     auto_url = META_URL_MAP.get(selected_competitor, "")
 
     def _on_comp_complete(res):
