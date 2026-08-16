@@ -90,7 +90,6 @@ h1, h2, h3, h4, h5, h6 {
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 
-/* [핵심 완벽 수정] 모든 셀렉트박스, 텍스트 인풋, 드롭다운, 팝오버 내부의 다크 테마/어두운 배경(#191B29 등)을 백색으로 완전 강제 고정 */
 div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
 [data-testid="stTextInput"] input,
@@ -154,7 +153,7 @@ SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
     "유아": ["윙크", "웅진스마트올", "밀크T아이", "리틀홈런"],
     "초등": ["밀크T", "아이스크림 홈런", "비상 온리원", "단꿈e", "기타"],
-    "중등": ["밀크T중등", "웅진스마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
+    "중등": ["밀크T중등", "웅진ส마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
 }
 
 META_URL_MAP = {
@@ -172,10 +171,11 @@ META_URL_MAP = {
     "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
 }
 
+# 유아와 중등 자사 메타 라이브러리 URL 교체 반영
 OWN_META_URL_MAP = {
-    "유아": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=1600636653593633",
+    "유아": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=104085702734737",
     "초등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=113924893334247",
-    "중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=104085702734737"
+    "중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=1600636653593633"
 }
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -614,9 +614,9 @@ with top_col3:
 st.divider()
 
 # ------------------------------------------------------------------
-# 사이드바
+# 사이드바 (02 · 경쟁사 프로필 제거)
 # ------------------------------------------------------------------
-NAV_ITEMS = ["01 · 경쟁사 소재 분석", "02 · 경쟁사 프로필", "03 · 자사 소재 분석", "04 · 메시지 갭 분석", "05 · 스토리보드 아이디어", "06 · 히스토리"]
+NAV_ITEMS = ["01 · 경쟁사 소재 분석", "02 · 자사 소재 분석", "03 · 메시지 갭 분석", "04 · 스토리보드 아이디어", "05 · 히스토리"]
 
 with st.sidebar:
     st.markdown('<div class="eyebrow">SEGMENT</div>', unsafe_allow_html=True)
@@ -652,7 +652,7 @@ if nav == "01 · 경쟁사 소재 분석":
                     time.sleep(0.5)
                     st.rerun()
 
-    # 사용자가 직접 추가한 커스텀 경쟁사 목록이 있다면, 아래에 [명칭 ❌] 형태로 나열해서 바로 삭제할 수 있게 제공
+    # 사용자가 직접 추가한 커스텀 경쟁사 목록이 있다면, 바로 삭제할 수 있게 [이름 ❌] 버튼 제공
     default_list = DEFAULT_COMPETITORS.get(segment, [])
     custom_added = [c for c in competitors if c not in default_list]
     if custom_added:
@@ -682,51 +682,264 @@ if nav == "01 · 경쟁사 소재 분석":
         render_integrated_scorecard(W["last_comp_result"]["report"])
 
 # ------------------------------------------------------------------
-# 02 · 경쟁사 프로필
+# 02 · 자사 소재 분석
 # ------------------------------------------------------------------
-elif nav == "02 · 경쟁사 프로필":
-    section_header("02", f"{segment} 경쟁사 프로필", "01 탭에서 분석한 브랜드별 통합 크리에이티브 리포트가 누적됩니다.")
-    profiles = load_all_profiles().get(segment, {})
-    competitors = load_competitors()[segment]
-    for comp in competitors:
-        entries = profiles.get(comp, [])
-        if not entries: continue
-        latest = entries[0]
-        rep = latest.get("report", {})
-        st.markdown(f'<div class="comp-card"><div class="comp-name">{comp}</div><div class="comp-meta">누적 분석 {len(entries)}회 · 최근 수집 소재 {latest.get("count", 0)}건</div></div>', unsafe_allow_html=True)
-        with st.expander(f"{comp} 리포트 세부보기"):
-            render_integrated_scorecard(rep)
-
-# ------------------------------------------------------------------
-# 03 · 자사 소재 분석
-# ------------------------------------------------------------------
-elif nav == "03 · 자사 소재 분석":
-    section_header("03", f"{segment} 자사 광고 소재 분석")
+elif nav == "02 · 자사 소재 분석":
+    section_header("02", f"{segment} 자사 광고 소재 분석")
     render_material_section("own", f"자사({segment})", OWN_META_URL_MAP.get(segment, ""), lambda res: W.update({"own_analyses": res}))
 
 # ------------------------------------------------------------------
-# 04 · 메시지 갭 분석
+# 03 · 메시지 갭 분석
 # ------------------------------------------------------------------
-elif nav == "04 · 메시지 갭 분석":
-    section_header("04", f"{segment} 메시지 갭 분석 & 위닝 포인트")
-    if st.button("메시지 갭 분석 실행", type="primary"):
-        W["gap_analysis"] = "갭 분석 완료 결과 예시"
-    if W["gap_analysis"]: st.markdown(W["gap_analysis"])
+elif nav == "03 · 메시지 갭 분석":
+    section_header("03", f"{segment} 메시지 갭 분석 & 위닝 포인트")
+    
+    profiles = load_all_profiles().get(segment, {})
+    all_comp_entries = [(comp, e) for comp, es in profiles.items() for e in es]
+
+    if not all_comp_entries:
+        st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해주세요.")
+    else:
+        if st.button("경쟁사 위닝 포인트 도출", type="primary", key="insight_btn"):
+            if not st.session_state.get("current_api_key"):
+                st.error("상단에서 API Key를 입력해 주세요.")
+            else:
+                comp_summary = ""
+                for comp, e in all_comp_entries:
+                    rep = e.get("report", {})
+                    comp_summary += f"[{comp}]\n메시지장점: {rep.get('msg_good','')}\n아쉬운점: {rep.get('msg_bad','')}\n\n"
+
+                INSIGHT_PROMPT = """당신은 수석 브랜드 전략가입니다. 아래 경쟁사들의 최신 광고 분석 리포트를 검토하고,
+경쟁사들이 공통으로 활용하고 있는 성공 패턴(위닝 포인트)을 3가지 핵심 키워드로 요약하고, 시장의 트렌드 인사이트를 도출해주세요.
+
+[경쟁사 분석 모음]
+{comp_summary}
+
+작성 형식:
+### 핵심 위닝 포인트 3가지
+1. **[키워드]**: 설명...
+2. **[키워드]**: 설명...
+3. **[키워드]**: 설명...
+
+### 종합 마케팅 인사이트
+- 시장 내 공통적인 소구 트렌드 및 시사점
+"""
+                with st.spinner("인사이트 도출 중..."):
+                    try:
+                        resp_text = run_unified_ai_prompt(
+                            st.session_state["current_ai_provider"],
+                            st.session_state["current_api_key"],
+                            INSIGHT_PROMPT.format(comp_summary=comp_summary)
+                        )
+                        W["insight"] = resp_text
+                    except Exception as e: st.error(f"오류 발생: {e}")
+
+        if W["insight"]: st.markdown(W["insight"])
+
+        st.divider()
+        st.markdown("**우리 소재와 비교해서 부족한 메시지 찾기**")
+
+        if not W["own_analyses"]:
+            st.info("02 탭(자사 소재 분석)에서 자사 소재 분석을 완료하면, 경쟁사 대비 부족한 메시지를 비교해드려요.")
+        else:
+            if st.button("메시지 갭 분석 실행", type="primary", key="gap_btn"):
+                if not st.session_state.get("current_api_key"):
+                    st.error("상단에서 API Key를 입력해 주세요.")
+                else:
+                    comp_summary = ""
+                    for comp, e in all_comp_entries:
+                        rep = e.get("report", {})
+                        comp_summary += f"[{comp}] {rep.get('msg_good','')}\n"
+                    
+                    own_rep = W["own_analyses"].get("report", {})
+                    own_summary = f"[자사] 메시지장점: {own_rep.get('msg_good','')}\n아쉬운점: {own_rep.get('msg_bad','')}"
+
+                    GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 경쟁사 그룹과 자사 브랜드 분석 정보입니다.
+두 그룹을 비교해서 아래 내용을 정리해주세요.
+
+[경쟁사 그룹 요약]
+{comp_summary}
+
+[자사 브랜드 요약]
+{own_summary}
+
+작성 형식:
+### 경쟁사는 다루지만 우리 소재에는 부족한 메시지
+- ...
+
+### 보강하면 좋을 메시지 (우선순위 순, 이유 포함)
+1. ...
+2. ...
+3. ...
+
+### 우리만 갖고 있는 강점 (계속 유지할 것)
+- ...
+"""
+                    with st.spinner("갭 분석 중..."):
+                        try:
+                            resp_text = run_unified_ai_prompt(
+                                st.session_state["current_ai_provider"],
+                                st.session_state["current_api_key"],
+                                GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)
+                            )
+                            W["gap_analysis"] = resp_text
+                        except Exception as e: st.error(f"오류 발생: {e}")
+
+            if W["gap_analysis"]: st.markdown(W["gap_analysis"])
 
 # ------------------------------------------------------------------
-# 05 · 스토리보드 아이디어
+# 04 · 스토리보드 아이디어
 # ------------------------------------------------------------------
-elif nav == "05 · 스토리보드 아이디어":
-    section_header("05", f"{segment} 맞춤형 스토리보드 아이디어")
-    brand_name = st.text_input("브랜드명", key=f"{segment}_bn")
-    if st.button("아이디어 생성", type="primary"):
-        W["ideas"] = "스토리보드 결과 예시"
-    if W["ideas"]: st.markdown(W["ideas"])
+elif nav == "04 · 스토리보드 아이디어":
+    section_header("04", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드 정보를 입력하고 기획안을 생성합니다.")
+
+    with st.expander(f"{segment} 브랜드 정보 입력 / 수정", expanded=True):
+        all_brands = load_all_brands()
+        saved_brand = all_brands.get(segment, {})
+        for fkey, default in [
+            ("brand_name", ""), ("brand_product", ""), ("brand_usp", ""),
+            ("target_audience", ""), ("brand_design_memory", ""),
+        ]:
+            skey = f"{segment}_{fkey}"
+            if skey not in st.session_state:
+                st.session_state[skey] = saved_brand.get(fkey, default)
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            brand_name = st.text_input("브랜드/제품명", key=f"{segment}_brand_name", placeholder="예: 브랜드명 입력")
+            brand_usp = st.text_area("핵심 셀링포인트 (USP)", key=f"{segment}_brand_usp", placeholder="예: 우리 제품만의 차별점")
+        with col_b:
+            brand_product = st.text_area("제품/서비스 설명", key=f"{segment}_brand_product", placeholder="예: 제공하는 제품/서비스 설명")
+            target_audience = st.text_input("타겟 고객층", key=f"{segment}_target_audience", placeholder="예: 학부모 / 자녀 연령대 등")
+
+        st.markdown("**디자인 톤앤매너 및 레퍼런스 메모리**")
+        brand_design_memory = st.text_area(
+            "디자인 메모리", key=f"{segment}_brand_design_memory",
+            placeholder="예: 밝고 친근한 톤, 학습 효과를 강조, 과장된 비교 광고는 지양함.",
+            height=100, label_visibility="collapsed",
+        )
+
+        save_col, status_col = st.columns([1, 3])
+        with save_col:
+            if st.button("저장", type="primary", key=f"{segment}_brand_save"):
+                save_brand(segment, {
+                    "brand_name": brand_name, "brand_product": brand_product, "brand_usp": brand_usp,
+                    "target_audience": target_audience, "brand_design_memory": brand_design_memory,
+                })
+                st.session_state[f"{segment}_brand_saved"] = True
+        with status_col:
+            if st.session_state.get(f"{segment}_brand_saved"): st.caption("저장되었습니다.")
+
+    st.divider()
+
+    profiles = load_all_profiles().get(segment, {})
+    all_comp_entries = [(comp, e) for comp, es in profiles.items() for e in es]
+
+    if not brand_name or not brand_product:
+        st.warning("위에서 '브랜드/제품명'과 '제품 설명'을 먼저 입력하고 저장해 주세요.")
+    elif not all_comp_entries:
+        st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해 주세요.")
+    else:
+        if st.button("위닝 스토리보드 아이디어 생성", type="primary"):
+            if not st.session_state.get("current_api_key"):
+                st.error("상단에서 API Key를 입력해 주세요.")
+            else:
+                gap_context = W["gap_analysis"] or "없음 (아직 메시지 갭 분석을 실행하지 않음)"
+
+                STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
+그리고 자사 디자인 메모리를 반영하여 차별화된 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
+
+[자사 브랜드 정보]
+- 브랜드/제품명: {brand_name}
+- 제품 설명: {brand_product}
+- 핵심 USP: {brand_usp}
+- 타겟 고객: {target_audience}
+- 자사 디자인 가이드: {design_memory}
+
+[메시지 갭 분석]
+{gap_context}
+
+각 아이디어는 아래 구조의 스토리보드 형식으로 작성해주세요:
+### [아이디어 N] 한줄 컨셉 타이틀
+- **타겟구간 / 매체 소구 포인트**: 
+- **훅킹 카피 (오프닝 3초)**: 
+- **비주얼 구성안 (연출 기획)**: 
+- **본문 설득 및 USP 소구 방식**: 
+- **CTA (행동 유도 문구)**: 
+- **차별화 포인트**: 
+"""
+                with st.spinner("스토리보드 기획안 작성 중..."):
+                    try:
+                        resp_text = run_unified_ai_prompt(
+                            st.session_state["current_ai_provider"],
+                            st.session_state["current_api_key"],
+                            STORYBOARD_PROMPT.format(
+                                brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
+                                target_audience=target_audience,
+                                design_memory=brand_design_memory or "기본 톤앤매너",
+                                gap_context=gap_context
+                            )
+                        )
+                        W["ideas"] = resp_text
+
+                        save_history_entry({
+                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "segment": segment,
+                            "brand_name": brand_name,
+                            "brand_product": brand_product,
+                            "target_audience": target_audience,
+                            "material_count": len(all_comp_entries),
+                            "insight": W["insight"],
+                            "gap_analysis": W["gap_analysis"],
+                            "ideas": W["ideas"],
+                        })
+                    except Exception as e: st.error(f"오류 발생: {e}")
+
+        if W["ideas"]:
+            st.markdown(W["ideas"])
+            st.divider()
+            st.download_button(
+                "광고 기획안 다운로드 (.md)", data=W["ideas"],
+                file_name=f"{segment}_ad_winning_storyboards.md", mime="text/markdown",
+            )
 
 # ------------------------------------------------------------------
-# 06 · 히스토리
+# 05 · 히스토리
 # ------------------------------------------------------------------
-elif nav == "06 · 히스토리":
-    section_header("06", "히스토리")
-    for entry in load_history():
-        st.markdown(f"**{entry.get('brand_name')}**")
+elif nav == "05 · 히스토리":
+    section_header("05", "히스토리", "완료한 아이디어 추출 결과가 부문 구분과 함께 자동으로 쌓입니다.")
+
+    history = load_history()
+    show_all = st.checkbox("모든 부문 보기 (선택 해제 시 현재 부문만)", value=False)
+    filtered = history if show_all else [h for h in history if h.get("segment", "") == segment]
+
+    if not filtered:
+        st.info("아직 완료된 결과가 없어요. 04 탭에서 아이디어를 생성하면 여기에 자동으로 기록됩니다.")
+    else:
+        col_h1, col_h2 = st.columns([3, 1])
+        with col_h1: st.caption(f"총 {len(filtered)}건의 기록")
+        with col_h2:
+            if st.button("전체 기록 삭제"):
+                if os.path.exists(HISTORY_FILE): os.remove(HISTORY_FILE)
+                st.rerun()
+
+        for i, entry in enumerate(filtered):
+            title = f"[{entry.get('segment', '-')}] {entry.get('brand_name', '(브랜드명 없음)')} · {entry.get('timestamp', '')}"
+            with st.expander(title):
+                st.markdown(f'<div class="history-meta">분석 경쟁사 {entry.get("material_count", 0)}개 · 타겟: {entry.get("target_audience", "-")}</div>', unsafe_allow_html=True)
+                st.divider()
+                if entry.get("insight"):
+                    st.markdown("**위닝 포인트 요약**")
+                    st.markdown(entry["insight"])
+                    st.divider()
+                if entry.get("gap_analysis"):
+                    st.markdown("**메시지 갭 분석**")
+                    st.markdown(entry["gap_analysis"])
+                    st.divider()
+                st.markdown("**스토리보드 아이디어**")
+                st.markdown(entry.get("ideas", ""))
+                st.download_button(
+                    "이 결과 다운로드 (.md)", data=entry.get("ideas", ""),
+                    file_name=f"ad_ideas_{entry.get('timestamp', '').replace(':', '').replace(' ', '_')}.md",
+                    mime="text/markdown", key=f"history_dl_{i}",
+                )
