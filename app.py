@@ -89,6 +89,34 @@ h1, h2, h3, h4, h5, h6 {
 .comp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background-color: #FFFFFF !important; margin-bottom: 10px; }
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
+
+/* 셀렉트박스 / 텍스트 인풋 / 텍스트에어리어 가독성 강제 (다크 테마에서도 항상 밝은 배경 + 어두운 글씨) */
+[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+[data-testid="stTextInput"] input,
+[data-testid="stTextArea"] textarea,
+[data-testid="stNumberInput"] input {
+    background-color: #FFFFFF !important;
+    color: var(--ink) !important;
+    border: 1px solid var(--border) !important;
+}
+[data-testid="stSelectbox"] div[data-baseweb="select"] span,
+[data-testid="stSelectbox"] div[data-baseweb="select"] div {
+    color: var(--ink) !important;
+}
+
+/* 셀렉트박스를 클릭했을 때 뜨는 드롭다운 옵션 목록 */
+div[data-baseweb="popover"] ul,
+div[data-baseweb="popover"] li,
+div[role="listbox"],
+li[role="option"] {
+    background-color: #FFFFFF !important;
+    color: var(--ink) !important;
+}
+li[role="option"]:hover,
+li[aria-selected="true"] {
+    background-color: var(--primary-soft) !important;
+    color: var(--ink) !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -681,7 +709,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner(f"'{selected_comp}' 광고 소재를 백그라운드에서 자동 수집하고 있어요..."):
+                with st.spinner(""):
                     ads, debug_info, err = scrape_meta_ads_with_playwright(
                         meta_url.strip(), max_items=12, selectors=load_selectors()
                     )
@@ -701,17 +729,18 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         with_image = [it for it in ads if it["bytes"]]
                         st.success(f"[{selected_comp}] 총 {len(ads)}건 수집 완료 (이미지 확보 {len(with_image)}건)")
 
-                    # 크롤링 구조가 깨졌는지 바로 확인할 수 있도록 디버그 정보 노출
-                    # (err가 이미 있는 경우 = 브라우저 자체가 죽은 것이므로 선택자 문제로 안내하지 않음)
+                    # 디버그 정보(사용된 선택자, 인식 카드 수)는 화면에 바로 노출하지 않고
+                    # 필요할 때만 펼쳐볼 수 있도록 접힌 expander 안에 넣어둔다.
                     if not err:
-                        if is_fallback or card_count == 0:
-                            st.warning(
-                                f"⚠️ 광고 카드 선택자가 하나도 매칭되지 않았습니다 (사용된 선택자: `{used_selector}`). "
-                                "메타 페이지 구조가 바뀐 것으로 보입니다 — 사이드바의 "
-                                "'⚙️ 크롤링 선택자 설정'에서 새 선택자를 추가해 주세요."
-                            )
-                        else:
-                            st.caption(f"🔍 사용된 카드 선택자: `{used_selector}` · 인식된 카드 수: {card_count}개")
+                        with st.expander("🔍 수집 세부 정보 (문제 발생 시에만 확인)", expanded=False):
+                            if is_fallback or card_count == 0:
+                                st.caption(
+                                    f"광고 카드 선택자가 매칭되지 않아 전체 페이지 스캔으로 수집했습니다 "
+                                    f"(사용된 선택자: `{used_selector}`). 결과가 부정확하면 사이드바의 "
+                                    "'⚙️ 크롤링 선택자 설정'에서 새 선택자를 추가해 보세요."
+                                )
+                            else:
+                                st.caption(f"사용된 카드 선택자: `{used_selector}` · 인식된 카드 수: {card_count}개")
 
     with tab2:
         uploaded_files = st.file_uploader(
