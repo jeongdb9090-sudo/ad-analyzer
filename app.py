@@ -90,7 +90,7 @@ h1, h2, h3, h4, h5, h6 {
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 
-/* [핵심 수정] 셀렉트박스, 인풋 필드, 팝오버, 드롭다운 전체에 걸쳐 어두운 배경(#191B29 등)을 백색으로 완전 교체 및 강제 */
+/* [핵심 완벽 수정] 모든 셀렉트박스, 텍스트 인풋, 드롭다운, 팝오버 내부의 다크 테마/어두운 배경(#191B29 등)을 백색으로 완전 강제 고정 */
 div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
 [data-testid="stTextInput"] input,
@@ -99,8 +99,10 @@ div[data-baseweb="base-input"] > input,
 div[data-baseweb="popover"],
 div[data-testid="stPopoverBody"],
 div[data-baseweb="menu"],
-div[data-baseweb="tag"] {
+div[data-baseweb="tag"],
+div[data-baseweb="select"] {
     background-color: #FFFFFF !important;
+    background: #FFFFFF !important;
     color: var(--ink) !important;
     border-color: var(--border) !important;
 }
@@ -165,7 +167,7 @@ META_URL_MAP = {
     "비상 온리원": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=552773944780211",
     "단꿈e": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=350531981486027",
     "밀크T중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=101376489315136",
-    "웅진ส마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
+    "웅진스마트올 중학": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=103396781600446",
     "비상 온리원 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=989750591106584",
     "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
 }
@@ -635,7 +637,7 @@ if nav == "01 · 경쟁사 소재 분석":
 
     competitors = load_competitors()[segment]
     
-    comp_col, add_col, del_col = st.columns([3.5, 1.2, 1.2])
+    comp_col, add_col = st.columns([4, 1.2])
     with comp_col:
         selected_competitor = st.selectbox("분석할 경쟁사", competitors, key=f"{segment}_comp_select")
     with add_col:
@@ -649,18 +651,19 @@ if nav == "01 · 경쟁사 소재 분석":
                     st.success(f"'{new_comp.strip()}' 추가 완료!")
                     time.sleep(0.5)
                     st.rerun()
-    with del_col:
-        st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
-        with st.popover("❌ 경쟁사 삭제", use_container_width=True):
-            st.markdown("##### 삭제할 경쟁사 선택")
-            target_to_del = st.selectbox("삭제 대상", competitors, key=f"{segment}_del_select")
-            if st.button("선택 경쟁사 삭제", key=f"{segment}_del_btn", use_container_width=True):
-                if target_to_del in DEFAULT_COMPETITORS.get(segment, []):
-                    st.warning("기본 제공 경쟁사는 삭제할 수 없습니다.")
-                else:
-                    remove_competitor(segment, target_to_del)
-                    st.success(f"'{target_to_del}' 삭제 완료!")
-                    time.sleep(0.5)
+
+    # 사용자가 직접 추가한 커스텀 경쟁사 목록이 있다면, 아래에 [명칭 ❌] 형태로 나열해서 바로 삭제할 수 있게 제공
+    default_list = DEFAULT_COMPETITORS.get(segment, [])
+    custom_added = [c for c in competitors if c not in default_list]
+    if custom_added:
+        st.markdown("<div style='font-size: 12px; color: #555866; margin-top: 6px; margin-bottom: 8px;'>📌 내가 추가한 경쟁사 (❌를 누르면 바로 삭제됩니다)</div>", unsafe_allow_html=True)
+        del_cols = st.columns(min(len(custom_added), 4))
+        for c_idx, c_name in enumerate(custom_added):
+            with del_cols[c_idx % len(del_cols)]:
+                if st.button(f"{c_name} ❌", key=f"quick_del_{segment}_{c_name}", use_container_width=True):
+                    remove_competitor(segment, c_name)
+                    st.success(f"'{c_name}' 삭제 완료!")
+                    time.sleep(0.3)
                     st.rerun()
 
     auto_url = META_URL_MAP.get(selected_competitor, "")
