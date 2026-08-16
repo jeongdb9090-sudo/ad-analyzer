@@ -7,28 +7,41 @@ import time
 import subprocess
 from datetime import datetime
 from urllib.parse import urlparse, parse_qs
+
+# 필수 패키지 자동 설치 보장 함수 (맨 처음에 실행)
+def ensure_package(package_name, import_name=None):
+    if import_name is None:
+        import_name = package_name
+    try:
+        __import__(import_name)
+    except ImportError:
+        try:
+            subprocess.run(["pip", "install", package_name], check=True)
+        except Exception:
+            pass
+
+ensure_package("requests")
+ensure_package("Pillow", "PIL")
+ensure_package("beautifulsoup4", "bs4")
+ensure_package("google-generativeai", "google.generativeai")
+ensure_package("openai")
+ensure_package("anthropic")
+ensure_package("playwright")
+
 import requests
-import streamlit as str_lit
 import streamlit as st
 from PIL import Image
 from bs4 import BeautifulSoup
 
-# 스트림릿 클라우드 서버 환경에서 Playwright 및 필수 패키지 자동 설치 보장
+# 스트림릿 클라우드 서버 환경에서 Playwright 브라우저 자동 설치 보장
 @st.cache_resource
-def install_dependencies():
+def install_playwright():
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception:
         pass
-    try:
-        import google.generativeai
-    except ImportError:
-        try:
-            subprocess.run(["pip", "install", "google-generativeai"], check=True)
-        except Exception:
-            pass
 
-install_dependencies()
+install_playwright()
 
 try:
     from playwright.sync_api import sync_playwright
@@ -276,7 +289,7 @@ def save_profile_entry(segment, competitor, entry):
 
 
 # ------------------------------------------------------------------
-# Playwright 크롤링 함수 (프로필 아이콘 정밀 필터링 로직 포함)
+# Playwright 크롤링 함수
 # ------------------------------------------------------------------
 _EXTRACT_ADS_JS = """
 (config) => {
@@ -505,10 +518,12 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
         try:
             import google.generativeai as genai
         except ImportError:
-            raise RuntimeError("google-generativeai 패키지가 설치되어 있지 않습니다. 터미널에서 'pip install google-generativeai'를 실행해주세요.")
+            subprocess.run(["pip", "install", "google-generativeai"], check=True)
+            import google.generativeai as genai
         
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # 404 에러 방지를 위해 현재 표준 지원 모델인 gemini-1.5-pro 적용
+        model = genai.GenerativeModel("gemini-1.5-pro")
         contents = [prompt_text]
         if collage_bytes: contents.append(Image.open(io.BytesIO(collage_bytes)))
         return model.generate_content(contents).text
