@@ -28,7 +28,7 @@ from playwright.sync_api import sync_playwright
 # 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
 try:
-    st.set_page_config(page_title="경쟁사 광고 소재 분석 (Playwright)", layout="wide", page_icon="◆")
+    st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
 except Exception:
     pass
 
@@ -300,7 +300,16 @@ _EXTRACT_ADS_JS = """
         imgs.forEach((img) => {
             const src = img.currentSrc || img.src || '';
             if (!src || seen.has(src)) return;
-            if (img.naturalWidth && img.naturalWidth < image_min_width) return;
+
+            // 메타는 이미지를 지연 로딩(lazy load)하기 때문에, 아직 로드되지 않은
+            // 이미지는 naturalWidth가 0으로 나올 수 있음. 이 경우 "크기 미상"으로
+            // 보고 걸러내지 않는다 (0을 작은 이미지로 오판하지 않도록 방지).
+            let renderedWidth = img.naturalWidth || 0;
+            if (!renderedWidth) {
+                try { renderedWidth = Math.round(img.getBoundingClientRect().width) || 0; } catch (e) {}
+            }
+            if (!renderedWidth) renderedWidth = img.width || 0;
+            if (renderedWidth > 0 && renderedWidth < image_min_width) return;
 
             const matchesDomain = image_domain_keywords.some((k) => src.includes(k));
             if (!matchesDomain) return;
@@ -316,6 +325,28 @@ _EXTRACT_ADS_JS = """
     return { usedSelector, cardCount: cards.length, items };
 }
 """
+
+
+def _upgrade_image_resolution(url):
+    """
+    메타 CDN 이미지 URL에 포함된 리사이즈 파라미터(예: s600x600)를
+    한 단계 더 큰 값으로 바꿔서 조금 더 선명한 이미지를 받아온다.
+    파라미터가 없으면 원본 URL을 그대로 반환.
+    """
+    if not url:
+        return url
+    try:
+        # stp=dst-jpg_s600x600_tt6 형태의 sWIDTHxHEIGHT 부분을 찾아 소폭(약 1.6배) 확대
+        def _bump(match):
+            w, h = int(match.group(1)), int(match.group(2))
+            new_w = min(int(w * 1.6), 1080)
+            new_h = min(int(h * 1.6), 1080)
+            return f"s{new_w}x{new_h}"
+
+        upgraded = re.sub(r"s(\d{2,4})x(\d{2,4})", _bump, url)
+        return upgraded
+    except Exception:
+        return url
 
 
 def _scrape_once(library_url, max_items, cfg):
@@ -389,6 +420,9 @@ def _scrape_once(library_url, max_items, cfg):
             if page.is_closed():
                 raise RuntimeError("소재 추출 직전 브라우저가 예기치 않게 종료되었습니다. (메모리 부족 가능성)")
 
+            # 스크롤 직후 지연 로딩된 이미지들이 실제로 로드될 시간을 살짝 더 준다
+            time.sleep(1.5)
+
             extracted = page.evaluate(_EXTRACT_ADS_JS, cfg)
             debug_info["used_selector"] = extracted.get("usedSelector")
             debug_info["card_count"] = extracted.get("cardCount", 0)
@@ -398,12 +432,15 @@ def _scrape_once(library_url, max_items, cfg):
                 body_text = item.get("bodyText", "")
                 img_bytes = None
                 if img_url:
-                    try:
-                        img_resp = requests.get(img_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
-                        if img_resp.status_code == 200:
-                            img_bytes = img_resp.content
-                    except Exception:
-                        pass
+                    hi_res_url = _upgrade_image_resolution(img_url)
+                    for candidate_url in [hi_res_url, img_url]:
+                        try:
+                            img_resp = requests.get(candidate_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=8)
+                            if img_resp.status_code == 200:
+                                img_bytes = img_resp.content
+                                break
+                        except Exception:
+                            continue
 
                 results.append({
                     "id": f"pw_{idx}_{time.time()}",
@@ -627,7 +664,7 @@ def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes
 # [소재 수집 UI]
 # ------------------------------------------------------------------
 def render_material_section(prefix, selected_comp, default_url, on_complete):
-    tab1, tab2 = st.tabs(["🚀 Playwright 자동 크롤링 수집", "📁 예비 업로드"])
+    tab1, tab2 = st.tabs(["🚀 자동 크롤링 수집", "📁 예비 업로드"])
     
     sess_key = f"{prefix}_items_{selected_comp}"
     if sess_key not in st.session_state:
@@ -640,7 +677,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             key=f"{prefix}_meta_url_input_{selected_comp}"
         )
 
-        if st.button("🚀 전체 라이브 소재 자동 수집 실행 (Playwright)", key=f"{prefix}_crawl_btn", type="primary"):
+        if st.button("🚀 전체 라이브 소재 자동 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
