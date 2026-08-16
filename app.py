@@ -25,7 +25,7 @@ install_playwright()
 from playwright.sync_api import sync_playwright
 
 # ------------------------------------------------------------------
-# 기본 설정 및 디자인 CSS (셀렉트박스/인풋창 배경 백색 통일)
+# 기본 설정 및 디자인 CSS (셀렉트박스/인풋창/팝오버 배경 백색 완벽 고정)
 # ------------------------------------------------------------------
 try:
     st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
@@ -90,12 +90,14 @@ h1, h2, h3, h4, h5, h6 {
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 
-/* 모든 셀렉트박스, 인풋창, 드롭다운 배경을 확실한 밝은 색(백색)으로 강제 고정 */
+/* [핵심] 모든 셀렉트박스, 텍스트 입력창, 팝오버 내부 컨테이너 배경을 백색으로 완전 강제 고정 */
 div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea,
-[data-testid="stNumberInput"] input {
+[data-testid="stNumberInput"] input,
+div[data-baseweb="popover"],
+div[data-testid="stPopoverBody"] {
     background-color: #FFFFFF !important;
     color: var(--ink) !important;
     border-color: var(--border) !important;
@@ -185,7 +187,7 @@ DEFAULT_SELECTORS = {
         'div[data-testid="ad_library_card"]',
     ],
     "image_domain_keywords": ["scontent", "fbcdn"],
-    "image_min_width": 150,  # 프로필 아이콘 등 작은 썸네일(소형 이미지) 필터링 강화
+    "image_min_width": 150,
     "max_scroll_count": 8,
     "scroll_wait_ms": 2000,
     "initial_wait_timeout_ms": 15000,
@@ -244,6 +246,12 @@ def add_competitor(segment, name):
         data[segment].append(name)
         save_json(COMPETITORS_FILE, data)
 
+def remove_competitor(segment, name):
+    data = load_competitors()
+    if name in data[segment]:
+        data[segment].remove(name)
+        save_json(COMPETITORS_FILE, data)
+
 def load_all_profiles(): return load_json(PROFILES_FILE, {})
 def save_profile_entry(segment, competitor, entry):
     data = load_all_profiles()
@@ -292,11 +300,9 @@ _EXTRACT_ADS_JS = """
             if (!renderedWidth) renderedWidth = img.width || 0;
             if (!renderedHeight) renderedHeight = img.height || 0;
 
-            // 프로필 아이콘 및 작은 아바타/로고 이미지 방지 (정사각형에 가깝거나 일정 크기 이하인 경우 제외)
             if (renderedWidth > 0 && renderedWidth < image_min_width) return;
             if (renderedHeight > 0 && renderedHeight < image_min_width) return;
             
-            // 비율이 1:1에 가깝고 크기가 작은 이미지는 보통 프로필 로고나 아이콘이므로 제외
             if (renderedWidth > 0 && renderedHeight > 0) {
                 const ratio = renderedWidth / renderedHeight;
                 if (ratio > 0.8 && ratio < 1.2 && renderedWidth < 180) return;
@@ -520,7 +526,6 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                # 실시간 단계별 진행 상황을 보여주는 st.status 컴포넌트 적용
                 with st.status(f"'{selected_comp}' 광고 라이브러리 수집 진행 중...", expanded=True) as status_box:
                     def update_status(msg):
                         status_box.update(label=msg, state="running")
@@ -626,17 +631,32 @@ if nav == "01 · 경쟁사 소재 분석":
 
     competitors = load_competitors()[segment]
     
-    comp_col, add_col = st.columns([4, 1.2])
+    comp_col, add_col, del_col = st.columns([3.5, 1.2, 1.2])
     with comp_col:
         selected_competitor = st.selectbox("분석할 경쟁사", competitors, key=f"{segment}_comp_select")
     with add_col:
         st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
         with st.popover("+ 새 경쟁사 추가", use_container_width=True):
-            new_comp = st.text_input("경쟁사명", key=f"{segment}_new_comp_input")
-            if st.button("추가", key=f"{segment}_new_comp_btn", use_container_width=True):
+            st.markdown("##### 새 경쟁사 추가")
+            new_comp = st.text_input("경쟁사명 입력", key=f"{segment}_new_comp_input")
+            if st.button("추가 완료", key=f"{segment}_new_comp_btn", type="primary", use_container_width=True):
                 if new_comp.strip():
                     add_competitor(segment, new_comp.strip())
-                    st.toast(f"'{new_comp.strip()}' 추가되었습니다.")
+                    st.success(f"'{new_comp.strip()}' 추가 완료!")
+                    time.sleep(0.5)
+                    st.rerun()
+    with del_col:
+        st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
+        with st.popover("🗑️ 경쟁사 삭제", use_container_width=True):
+            st.markdown("##### 삭제할 경쟁사 선택")
+            target_to_del = st.selectbox("삭제 대상", competitors, key=f"{segment}_del_select")
+            if st.button("선택 경쟁사 삭제", key=f"{segment}_del_btn", use_container_width=True):
+                if target_to_del in DEFAULT_COMPETITORS.get(segment, []):
+                    st.warning("기본 제공 경쟁사는 삭제할 수 없습니다.")
+                else:
+                    remove_competitor(segment, target_to_del)
+                    st.success(f"'{target_to_del}' 삭제 완료!")
+                    time.sleep(0.5)
                     st.rerun()
 
     auto_url = META_URL_MAP.get(selected_competitor, "")
