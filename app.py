@@ -589,7 +589,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
-                with st.spinner(f"[{selected_comp}] 브라우저를 띄워 광고 소재를 수집 중입니다... (딜레이 적용)"):
+                with st.spinner(f"'{selected_comp}' 광고 소재를 백그라운드에서 자동 수집하고 있어요..."):
                     ads, debug_info, err = scrape_meta_ads_with_playwright(
                         meta_url.strip(), max_items=12, selectors=load_selectors()
                     )
@@ -644,7 +644,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
         st.divider()
         st.markdown(f"**수집된 소재 ({len(items)}건) — 타겟 연령대가 다른 소재는 ❌ 삭제하세요**")
 
-        cols_per_row = 4
+        cols_per_row = 6
         items_to_remove = []
         
         for i in range(0, len(items), cols_per_row):
@@ -653,19 +653,18 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
             
             for idx, item in enumerate(row_items):
                 with grid_cols[idx]:
-                    btn_col1, btn_col2 = st.columns([2, 1])
-                    with btn_col1:
-                        st.caption(f"소재 #{i+idx+1}")
-                    with btn_col2:
-                        if st.button("❌ 삭제", key=f"del_{item['id']}_{selected_comp}"):
-                            items_to_remove.append(item['id'])
-
                     if item.get("bytes"):
-                        st.image(item["bytes"], use_container_width=True)
+                        st.image(item["bytes"], width=110)
                     else:
-                        st.caption("🖼️ 이미지 미리보기 실패")
+                        st.caption("🖼️ 실패")
                         if item.get("body"):
-                            st.caption(item["body"][:80])
+                            st.caption(item["body"][:40])
+                    del_col1, del_col2 = st.columns([3, 1])
+                    with del_col1:
+                        st.caption(f"#{i+idx+1}")
+                    with del_col2:
+                        if st.button("❌", key=f"del_{item['id']}_{selected_comp}"):
+                            items_to_remove.append(item['id'])
 
         if items_to_remove:
             st.session_state[sess_key] = [it for it in st.session_state[sess_key] if it['id'] not in items_to_remove]
