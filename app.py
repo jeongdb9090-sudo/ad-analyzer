@@ -48,7 +48,7 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
 
 :root {
-    --ink: #FAF9F5;
+    --ink: #191B29;
     --muted: #555866;
     --paper: #FAF9F5;
     --surface: #FFFFFF;
