@@ -318,32 +318,26 @@ _EXTRACT_ADS_JS = """
 """
 
 
-def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None):
-    """
-    메타 광고 라이브러리에서 이미지 소재를 자동 수집합니다.
-
-    Returns:
-        results: [{id, fn, bytes, body, snapshot_url}, ...]
-        debug_info: {"used_selector": str, "card_count": int} — 선택자가
-            깨졌는지 판단할 때 UI에서 보여주는 정보
-        error: 에러 메시지 (없으면 None)
-    """
-    cfg = selectors or load_selectors()
+def _scrape_once(library_url, max_items, cfg):
+    """한 번의 Playwright 세션으로 스크래핑을 시도. 실패 시 예외를 그대로 던짐."""
     results = []
     debug_info = {"used_selector": None, "card_count": 0}
 
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--disable-blink-features=AutomationControlled",
-                    "--no-sandbox",
-                    "--disable-setuid-sandbox",
-                    "--disable-dev-shm-usage",
-                ]
-            )
+    with sync_playwright() as p:
+        browser = p.chromium.launch(
+            headless=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--disable-extensions",
+                "--no-zygote",
+            ]
+        )
 
+        try:
             context = browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                 viewport={"width": 1280, "height": 800},
@@ -353,10 +347,25 @@ def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None):
             page = context.new_page()
             page.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
 
-            page.goto(library_url, timeout=45000)
+            # 메모리 절약: 광고 소재 이미지 외에 폰트/동영상 등 무거운 리소스는 차단
+            # (크래시로 인한 'Target page ... has been closed' 오류를 줄이기 위함)
+            def _block_heavy_resources(route):
+                if route.request.resource_type in ("media", "font"):
+                    route.abort()
+                else:
+                    route.continue_()
+            page.route("**/*", _block_heavy_resources)
+
+            try:
+                page.goto(library_url, timeout=45000, wait_until="domcontentloaded")
+            except Exception as e:
+                raise RuntimeError(f"페이지 접속 실패 (goto): {e}")
 
             # 봇 탐지 회피를 위한 안전 딜레이
             time.sleep(5)
+
+            if page.is_closed():
+                raise RuntimeError("페이지 로딩 중 브라우저가 예기치 않게 종료되었습니다.")
 
             # 카드 후보 선택자 중 아무거나 하나라도 뜰 때까지 대기 (전부 실패해도 계속 진행)
             try:
@@ -368,12 +377,17 @@ def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None):
             # 스크롤하며 동적 로딩 유도 — 높이가 더 이상 늘어나지 않으면 조기 종료
             last_height = 0
             for _ in range(cfg.get("max_scroll_count", 8)):
+                if page.is_closed():
+                    raise RuntimeError("스크롤 중 브라우저가 예기치 않게 종료되었습니다. (메모리 부족 가능성)")
                 page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
                 time.sleep(cfg.get("scroll_wait_ms", 2000) / 1000)
                 new_height = page.evaluate("document.body.scrollHeight")
                 if new_height == last_height:
                     break
                 last_height = new_height
+
+            if page.is_closed():
+                raise RuntimeError("소재 추출 직전 브라우저가 예기치 않게 종료되었습니다. (메모리 부족 가능성)")
 
             extracted = page.evaluate(_EXTRACT_ADS_JS, cfg)
             debug_info["used_selector"] = extracted.get("usedSelector")
@@ -398,11 +412,52 @@ def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None):
                     "body": body_text,
                     "snapshot_url": library_url,
                 })
+        finally:
+            try:
+                browser.close()
+            except Exception:
+                pass
 
-            browser.close()
+    return results, debug_info
+
+
+def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None, _retry=True):
+    """
+    메타 광고 라이브러리에서 이미지 소재를 자동 수집합니다.
+
+    Returns:
+        results: [{id, fn, bytes, body, snapshot_url}, ...]
+        debug_info: {"used_selector": str, "card_count": int} — 선택자가
+            깨졌는지 판단할 때 UI에서 보여주는 정보
+        error: 에러 메시지 (없으면 None)
+    """
+    cfg = selectors or load_selectors()
+
+    try:
+        results, debug_info = _scrape_once(library_url, max_items, cfg)
         return results, debug_info, None
     except Exception as e:
-        return [], debug_info, f"스크레이핑 중 오류 발생: {e}"
+        err_text = str(e)
+        is_crash = (
+            "has been closed" in err_text
+            or "Target closed" in err_text
+            or "Browser closed" in err_text
+            or "예기치 않게 종료" in err_text
+        )
+        # 브라우저 크래시로 추정되는 경우 1회만 자동 재시도 (일시적 리소스 이슈일 수 있음)
+        if is_crash and _retry:
+            time.sleep(2)
+            return scrape_meta_ads_with_playwright(library_url, max_items, cfg, _retry=False)
+
+        if is_crash:
+            friendly = (
+                "스크레이핑 중 브라우저가 예기치 않게 종료되었습니다 (재시도도 실패). "
+                "주로 (1) 배포 환경에 Playwright 시스템 라이브러리(packages.txt)가 없거나, "
+                "(2) 메모리 부족일 때 발생합니다. 원본 오류: " + err_text
+            )
+            return [], {"used_selector": None, "card_count": 0}, friendly
+
+        return [], {"used_selector": None, "card_count": 0}, f"스크레이핑 중 오류 발생: {err_text}"
 
 
 def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
@@ -599,7 +654,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
 
                     used_selector = (debug_info or {}).get("used_selector") or "-"
                     card_count = (debug_info or {}).get("card_count", 0)
-                    is_fallback = used_selector.startswith("FALLBACK")
+                    is_fallback = isinstance(used_selector, str) and used_selector.startswith("FALLBACK")
 
                     if not ads:
                         st.info(f"⚠️ [{selected_comp}] 활성 광고를 수집하지 못했습니다. [예비 업로드] 탭을 활용해 주세요.")
@@ -610,14 +665,16 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         st.success(f"[{selected_comp}] 총 {len(ads)}건 수집 완료 (이미지 확보 {len(with_image)}건)")
 
                     # 크롤링 구조가 깨졌는지 바로 확인할 수 있도록 디버그 정보 노출
-                    if is_fallback or card_count == 0:
-                        st.warning(
-                            f"⚠️ 광고 카드 선택자가 하나도 매칭되지 않았습니다 (사용된 선택자: `{used_selector}`). "
-                            "메타 페이지 구조가 바뀐 것으로 보입니다 — 사이드바의 "
-                            "'⚙️ 크롤링 선택자 설정'에서 새 선택자를 추가해 주세요."
-                        )
-                    else:
-                        st.caption(f"🔍 사용된 카드 선택자: `{used_selector}` · 인식된 카드 수: {card_count}개")
+                    # (err가 이미 있는 경우 = 브라우저 자체가 죽은 것이므로 선택자 문제로 안내하지 않음)
+                    if not err:
+                        if is_fallback or card_count == 0:
+                            st.warning(
+                                f"⚠️ 광고 카드 선택자가 하나도 매칭되지 않았습니다 (사용된 선택자: `{used_selector}`). "
+                                "메타 페이지 구조가 바뀐 것으로 보입니다 — 사이드바의 "
+                                "'⚙️ 크롤링 선택자 설정'에서 새 선택자를 추가해 주세요."
+                            )
+                        else:
+                            st.caption(f"🔍 사용된 카드 선택자: `{used_selector}` · 인식된 카드 수: {card_count}개")
 
     with tab2:
         uploaded_files = st.file_uploader(
