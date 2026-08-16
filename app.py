@@ -13,19 +13,30 @@ import streamlit as st
 from PIL import Image
 from bs4 import BeautifulSoup
 
-# 스트림릿 클라우드 서버 환경에서 Playwright 브라우저 자동 설치 보장
+# 스트림릿 클라우드 서버 환경에서 Playwright 및 필수 패키지 자동 설치 보장
 @st.cache_resource
-def install_playwright():
+def install_dependencies():
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception:
         pass
+    try:
+        import google.generativeai
+    except ImportError:
+        try:
+            subprocess.run(["pip", "install", "google-generativeai"], check=True)
+        except Exception:
+            pass
 
-install_playwright()
-from playwright.sync_api import sync_playwright
+install_dependencies()
+
+try:
+    from playwright.sync_api import sync_playwright
+except Exception:
+    pass
 
 # ------------------------------------------------------------------
-# 기본 설정 및 디자인 CSS (어두운 배경 컬러 #191B29 원천 차단 및 백색 고정)
+# 기본 설정 및 디자인 CSS
 # ------------------------------------------------------------------
 try:
     st.set_page_config(page_title="경쟁사 광고 소재 분석", layout="wide", page_icon="◆")
@@ -37,7 +48,7 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
 
 :root {
-    --ink: #191B29;
+    --ink: #FAF9F5;
     --muted: #555866;
     --paper: #FAF9F5;
     --surface: #FFFFFF;
@@ -153,7 +164,7 @@ SEGMENTS = ["유아", "초등", "중등"]
 DEFAULT_COMPETITORS = {
     "유아": ["윙크", "웅진스마트올", "밀크T아이", "리틀홈런"],
     "초등": ["밀크T", "아이스크림 홈런", "비상 온리원", "단꿈e", "기타"],
-    "중등": ["밀크T중등", "웅진ส마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
+    "중등": ["밀크T중등", "웅진스마트올 중학", "비상 온리원 중등", "아이스크림 홈런 중등", "EBS"],
 }
 
 META_URL_MAP = {
@@ -171,7 +182,6 @@ META_URL_MAP = {
     "아이스크림 홈런 중등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&q=%ED%99%88%EB%9F%B0%20%EC%A4%91%EB%93%B1&search_type=keyword_unordered&sort_data[direction]=desc&sort_data[mode]=total_impressions"
 }
 
-# 유아와 중등 자사 메타 라이브러리 URL 교체 반영
 OWN_META_URL_MAP = {
     "유아": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=104085702734737",
     "초등": "https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=KR&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=113924893334247",
@@ -492,12 +502,17 @@ def render_integrated_scorecard(report):
 
 def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
     if ai_provider == "Gemini (Google)":
-        import google.generativeai as genai
+        try:
+            import google.generativeai as genai
+        except ImportError:
+            raise RuntimeError("google-generativeai 패키지가 설치되어 있지 않습니다. 터미널에서 'pip install google-generativeai'를 실행해주세요.")
+        
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel("gemini-1.5-flash")
         contents = [prompt_text]
         if collage_bytes: contents.append(Image.open(io.BytesIO(collage_bytes)))
         return model.generate_content(contents).text
+
     elif ai_provider == "ChatGPT (OpenAI)":
         from openai import OpenAI
         client = OpenAI(api_key=api_key)
@@ -505,6 +520,7 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
         if collage_bytes:
             content_payload.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(collage_bytes).decode('utf-8')}"}})
         return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": content_payload}]).choices[0].message.content
+
     elif ai_provider == "Claude (Anthropic)":
         import anthropic
         client = anthropic.Anthropic(api_key=api_key)
@@ -586,7 +602,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         report = run_brand_integrated_analysis(st.session_state['current_ai_provider'], st.session_state['current_api_key'], selected_comp, raw_bytes_list)
                         on_complete({"brand_name": selected_comp, "count": len(st.session_state[sess_key]), "report": report})
                     except Exception as e:
-                        st.error(f"오류 발생: {e}")
+                        st.error(f"분석 중 오류 발생: {e}")
 
 
 # ------------------------------------------------------------------
@@ -614,7 +630,7 @@ with top_col3:
 st.divider()
 
 # ------------------------------------------------------------------
-# 사이드바 (02 · 경쟁사 프로필 제거)
+# 사이드바
 # ------------------------------------------------------------------
 NAV_ITEMS = ["01 · 경쟁사 소재 분석", "02 · 자사 소재 분석", "03 · 메시지 갭 분석", "04 · 스토리보드 아이디어", "05 · 히스토리"]
 
@@ -652,7 +668,6 @@ if nav == "01 · 경쟁사 소재 분석":
                     time.sleep(0.5)
                     st.rerun()
 
-    # 사용자가 직접 추가한 커스텀 경쟁사 목록이 있다면, 바로 삭제할 수 있게 [이름 ❌] 버튼 제공
     default_list = DEFAULT_COMPETITORS.get(segment, [])
     custom_added = [c for c in competitors if c not in default_list]
     if custom_added:
