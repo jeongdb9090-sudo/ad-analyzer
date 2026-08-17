@@ -27,6 +27,9 @@ ensure_package("google-generativeai", "google.generativeai")
 ensure_package("openai")
 ensure_package("anthropic")
 ensure_package("playwright")
+# --- [추가] 히스토리 영구 저장을 위한 구글시트 연동 패키지 (선택 사항, 미설정 시 자동 미사용) ---
+ensure_package("gspread")
+ensure_package("google-auth", "google.oauth2")
 
 import requests
 import streamlit as st
@@ -151,6 +154,86 @@ li[aria-selected="true"] {
 }
 
 .align-bottom-btn { margin-top: 28px; }
+
+/* ------------------------------------------------------------------
+   [추가 CSS - 2번] 다크모드에서 새는 요소 추가 보강
+   config.toml에서 라이트 테마를 강제하지만, 팝업/파일업로더 등
+   일부 컴포넌트는 브라우저 렌더링 타이밍에 따라 새는 경우가 있어 이중 방어.
+------------------------------------------------------------------ */
+[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploader"] section,
+div[data-baseweb="popover"] * ,
+ul[role="listbox"] li,
+div[data-baseweb="calendar"],
+div[data-baseweb="datepicker"] {
+    background-color: #FFFFFF !important;
+    color: var(--ink) !important;
+}
+svg { fill: currentColor; }
+input, textarea { caret-color: var(--ink) !important; }
+
+/* ------------------------------------------------------------------
+   [추가 CSS - 4번] 세그먼트 / 좌측 메뉴를 알약형·현대적 네비게이션으로
+------------------------------------------------------------------ */
+/* 세그먼트 선택 - 가로 알약(pill) 탭 */
+div[data-testid="stSidebar"] div[data-testid="stRadio"]:has(div[role="radiogroup"]) {
+    margin-bottom: 4px;
+}
+div[data-testid="stSidebar"] div[role="radiogroup"] {
+    gap: 6px;
+}
+div[data-testid="stSidebar"] div[role="radiogroup"] > label {
+    border: 1px solid var(--border) !important;
+    background: #FFFFFF !important;
+    border-radius: 999px;
+    padding: 7px 14px !important;
+    margin: 0 !important;
+    transition: all 0.15s ease;
+}
+div[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) {
+    background: var(--primary) !important;
+    border-color: var(--primary) !important;
+}
+div[data-testid="stSidebar"] div[role="radiogroup"] > label:has(input:checked) p {
+    color: #FFFFFF !important;
+    font-weight: 700;
+}
+div[data-testid="stSidebar"] div[role="radiogroup"] > label > div:first-child {
+    display: none !important; /* 기본 라디오 원형 아이콘 숨김 */
+}
+
+/* 좌측 05단계 메뉴 - 세로 카드형 내비게이션 */
+.nav-block div[role="radiogroup"] {
+    flex-direction: column;
+    gap: 4px;
+}
+.nav-block div[role="radiogroup"] > label {
+    width: 100%;
+    border-radius: 8px;
+    padding: 10px 12px !important;
+    border: 1px solid transparent !important;
+    background: transparent !important;
+}
+.nav-block div[role="radiogroup"] > label:has(input:checked) {
+    background: var(--primary-soft) !important;
+    border-color: var(--primary) !important;
+}
+.nav-block div[role="radiogroup"] > label:has(input:checked) p {
+    color: var(--primary) !important;
+    font-weight: 700;
+}
+.nav-block div[role="radiogroup"] > label > div:first-child {
+    display: none !important;
+}
+.sidebar-caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    color: var(--muted) !important;
+    margin: 4px 0 6px 2px;
+    text-transform: uppercase;
+    font-weight: 700;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -207,6 +290,9 @@ BRAND_FILE = os.path.join(BASE_DIR, "ad_signal_brand.json")
 COMPETITORS_FILE = os.path.join(BASE_DIR, "ad_signal_competitors.json")
 PROFILES_FILE = os.path.join(BASE_DIR, "ad_signal_profiles.json")
 SELECTORS_FILE = os.path.join(BASE_DIR, "ad_signal_selectors.json")
+# --- [추가 - 5,6번] 자사 소재 분석 & 인사이트/갭분석을 세션이 아닌 파일(=구글시트)에 영구 저장 ---
+OWN_FILE = os.path.join(BASE_DIR, "ad_signal_own.json")
+WORK_STATE_FILE = os.path.join(BASE_DIR, "ad_signal_work_state.json")
 
 DEFAULT_SELECTORS = {
     "ad_card_candidates": [
@@ -238,14 +324,80 @@ def reset_selectors():
     save_json(SELECTORS_FILE, data)
     return data
 
+
+# ------------------------------------------------------------------
+# [추가 - 6번] 구글시트 기반 영구 저장소
+# Streamlit Cloud의 로컬 파일시스템은 컨테이너가 재시작되면 초기화될 수 있어
+# 히스토리가 계속 리셋되는 문제가 있었습니다. secrets.toml에
+# GSHEET_ID / gcp_service_account 가 설정되어 있으면 자동으로 구글시트에
+# 저장하고, 설정이 없으면 예전처럼 로컬 파일을 그대로 사용합니다(무설정 시 동작 100% 동일).
+# 설정 방법은 채팅 답변 참고.
+# ------------------------------------------------------------------
+@st.cache_resource(show_spinner=False)
+def _get_gsheet_client():
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+        if "gcp_service_account" not in st.secrets:
+            return None
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(dict(st.secrets["gcp_service_account"]), scopes=scopes)
+        return gspread.authorize(creds)
+    except Exception:
+        return None
+
+def _get_worksheet(sheet_name):
+    client = _get_gsheet_client()
+    if client is None:
+        return None
+    try:
+        sheet_id = st.secrets.get("GSHEET_ID")
+        if not sheet_id:
+            return None
+        sh = client.open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(sheet_name)
+        except Exception:
+            ws = sh.add_worksheet(title=sheet_name, rows=500, cols=1)
+        return ws
+    except Exception:
+        return None
+
 def load_json(path, default):
+    """구글시트가 설정되어 있으면 시트에서, 아니면 로컬 파일에서 읽기"""
+    sheet_name = os.path.splitext(os.path.basename(path))[0]
+    ws = _get_worksheet(sheet_name)
+    if ws is not None:
+        try:
+            col = ws.col_values(1)
+            chunks = col[1:] if len(col) > 1 else []
+            if chunks:
+                return json.loads("".join(chunks))
+            return default
+        except Exception:
+            return default
     if not os.path.exists(path): return default
     try:
         with open(path, "r", encoding="utf-8") as fp: return json.load(fp)
     except Exception: return default
 
 def save_json(path, data):
+    """구글시트가 설정되어 있으면 시트에, 아니면 로컬 파일에 쓰기
+    (구글시트 셀당 50,000자 제한이 있어 4만자 단위로 청크 분할 저장)"""
+    sheet_name = os.path.splitext(os.path.basename(path))[0]
+    ws = _get_worksheet(sheet_name)
+    if ws is not None:
+        try:
+            text = json.dumps(data, ensure_ascii=False)
+            chunk_size = 40000
+            chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)] or [""]
+            ws.clear()
+            ws.update("A1", [["chunk"]] + [[c] for c in chunks])
+            return
+        except Exception:
+            pass  # 실패 시 로컬 파일로 폴백
     with open(path, "w", encoding="utf-8") as fp: json.dump(data, fp, ensure_ascii=False, indent=2)
+
 
 def load_history(): return load_json(HISTORY_FILE, [])
 def save_history_entry(entry):
@@ -286,6 +438,26 @@ def save_profile_entry(segment, competitor, entry):
     data = load_all_profiles()
     data.setdefault(segment, {}).setdefault(competitor, []).insert(0, entry)
     save_json(PROFILES_FILE, data)
+
+# --- [추가 - 5,6번] 자사 소재 분석 결과 영구 저장 (기존엔 세션에만 있어서 새로고침하면 사라짐) ---
+def load_own_analysis(segment):
+    return load_json(OWN_FILE, {}).get(segment)
+
+def save_own_analysis(segment, data):
+    all_own = load_json(OWN_FILE, {})
+    all_own[segment] = data
+    save_json(OWN_FILE, all_own)
+
+# --- [추가 - 5,6번] 세그먼트별 작업 상태(인사이트/갭분석/스토리보드) 영구 저장 ---
+def load_work_state(segment):
+    default = {"insight": "", "gap_analysis": "", "ideas": ""}
+    default.update(load_json(WORK_STATE_FILE, {}).get(segment, {}))
+    return default
+
+def save_work_state(segment, data):
+    all_state = load_json(WORK_STATE_FILE, {})
+    all_state[segment] = data
+    save_json(WORK_STATE_FILE, all_state)
 
 
 # ------------------------------------------------------------------
@@ -522,8 +694,10 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
             import google.generativeai as genai
         
         genai.configure(api_key=api_key)
-        # 404 에러 방지를 위해 현재 표준 지원 모델인 gemini-1.5-pro 적용
-        model = genai.GenerativeModel("gemini-1.5-pro")
+        # [수정 - 3번] gemini-1.5-pro는 완전히 서비스 종료(404)됨.
+        # -latest 별칭을 사용하면 구글이 모델을 교체해도 자동으로 최신 모델을 가리켜서
+        # 앞으로 이런 단종 문제가 재발할 확률이 낮습니다.
+        model = genai.GenerativeModel("gemini-flash-latest")
         contents = [prompt_text]
         if collage_bytes: contents.append(Image.open(io.BytesIO(collage_bytes)))
         return model.generate_content(contents).text
@@ -534,7 +708,8 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
         content_payload = [{"type": "text", "text": prompt_text}]
         if collage_bytes:
             content_payload.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(collage_bytes).decode('utf-8')}"}})
-        return client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": content_payload}]).choices[0].message.content
+        # [수정 - 3번] gpt-4o -> gpt-5.1 (최신 플래그십, 비전 지원)
+        return client.chat.completions.create(model="gpt-5.1", messages=[{"role": "user", "content": content_payload}]).choices[0].message.content
 
     elif ai_provider == "Claude (Anthropic)":
         import anthropic
@@ -543,7 +718,8 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None)
         if collage_bytes:
             content_payload.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(collage_bytes).decode('utf-8')}})
         content_payload.append({"type": "text", "text": prompt_text})
-        return client.messages.create(model="claude-3-5-sonnet-20241022", max_tokens=2000, messages=[{"role": "user", "content": content_payload}]).content[0].text
+        # [수정 - 3번] claude-3-5-sonnet-20241022 -> claude-sonnet-5 (최신 모델)
+        return client.messages.create(model="claude-sonnet-5", max_tokens=2000, messages=[{"role": "user", "content": content_payload}]).content[0].text
 
 def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes_list):
     return parse_integrated_report(run_unified_ai_prompt(ai_provider, api_key, BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name), create_image_grid_collage(images_bytes_list)))
@@ -647,18 +823,43 @@ st.divider()
 # ------------------------------------------------------------------
 # 사이드바
 # ------------------------------------------------------------------
-NAV_ITEMS = ["01 · 경쟁사 소재 분석", "02 · 자사 소재 분석", "03 · 메시지 갭 분석", "04 · 스토리보드 아이디어", "05 · 히스토리"]
+NAV_ITEMS = ["🏆 01 · 경쟁사 소재 분석", "🏠 02 · 자사 소재 분석", "🔍 03 · 메시지 갭 분석", "🎬 04 · 스토리보드 아이디어", "🗂️ 05 · 히스토리"]
 
 with st.sidebar:
-    st.markdown('<div class="eyebrow">SEGMENT</div>', unsafe_allow_html=True)
-    segment = st.radio("사업 구분", SEGMENTS, label_visibility="collapsed", key="segment_selector")
+    st.markdown('<div class="sidebar-caption">SEGMENT</div>', unsafe_allow_html=True)
+    segment = st.radio("사업 구분", SEGMENTS, label_visibility="collapsed", key="segment_selector", horizontal=True)
     st.divider()
-    nav = st.radio("메뉴", NAV_ITEMS, label_visibility="collapsed", key="nav_selector")
+    st.markdown('<div class="sidebar-caption">MENU</div>', unsafe_allow_html=True)
+    st.markdown('<div class="nav-block">', unsafe_allow_html=True)
+    nav_full = st.radio("메뉴", NAV_ITEMS, label_visibility="collapsed", key="nav_selector")
+    st.markdown('</div>', unsafe_allow_html=True)
+    nav = nav_full.split(" · ", 1)[1] if " · " in nav_full else nav_full
+    nav = "0" + nav if False else nav  # (내부 로직 호환을 위해 아래에서 원래 라벨과 매칭)
+
+# 기존 코드의 "01 · ..." 형태 라벨과 매칭되도록 변환
+_NAV_MAP = {item: item.split(" ", 1)[1] for item in NAV_ITEMS}
+nav = _NAV_MAP[nav_full]
 
 if "work" not in st.session_state: st.session_state.work = {}
 if segment not in st.session_state.work:
-    st.session_state.work[segment] = {"own_analyses": None, "insight": "", "gap_analysis": "", "ideas": "", "last_comp_result": None, "last_competitor": ""}
+    _persisted = load_work_state(segment)
+    st.session_state.work[segment] = {
+        "own_analyses": load_own_analysis(segment),
+        "insight": _persisted.get("insight", ""),
+        "gap_analysis": _persisted.get("gap_analysis", ""),
+        "ideas": _persisted.get("ideas", ""),
+        "last_comp_result": None,
+        "last_competitor": "",
+    }
 W = st.session_state.work[segment]
+
+def _persist_work_state():
+    """인사이트 / 갭분석 / 스토리보드는 새로고침·재접속해도 남도록 즉시 저장"""
+    save_work_state(segment, {
+        "insight": W.get("insight", ""),
+        "gap_analysis": W.get("gap_analysis", ""),
+        "ideas": W.get("ideas", ""),
+    })
 
 # ------------------------------------------------------------------
 # 01 · 경쟁사 소재 분석
@@ -716,7 +917,18 @@ if nav == "01 · 경쟁사 소재 분석":
 # ------------------------------------------------------------------
 elif nav == "02 · 자사 소재 분석":
     section_header("02", f"{segment} 자사 광고 소재 분석")
-    render_material_section("own", f"자사({segment})", OWN_META_URL_MAP.get(segment, ""), lambda res: W.update({"own_analyses": res}))
+
+    def _on_own_complete(res):
+        W["own_analyses"] = res
+        save_own_analysis(segment, res)  # [수정 - 5,6번] 세션이 아닌 파일에 영구 저장
+        st.success("자사 소재 분석 완료! (03 탭 메시지 갭 분석에서 계속 사용됩니다)")
+
+    render_material_section("own", f"자사({segment})", OWN_META_URL_MAP.get(segment, ""), _on_own_complete)
+
+    if W["own_analyses"]:
+        st.divider()
+        st.markdown("### 저장된 자사 브랜드 통합 분석 리포트")
+        render_integrated_scorecard(W["own_analyses"].get("report", {}))
 
 # ------------------------------------------------------------------
 # 03 · 메시지 갭 분석
@@ -762,6 +974,7 @@ elif nav == "03 · 메시지 갭 분석":
                             INSIGHT_PROMPT.format(comp_summary=comp_summary)
                         )
                         W["insight"] = resp_text
+                        _persist_work_state()  # [수정 - 5,6번]
                     except Exception as e: st.error(f"오류 발생: {e}")
 
         if W["insight"]: st.markdown(W["insight"])
@@ -779,18 +992,24 @@ elif nav == "03 · 메시지 갭 분석":
                     comp_summary = ""
                     for comp, e in all_comp_entries:
                         rep = e.get("report", {})
-                        comp_summary += f"[{comp}] {rep.get('msg_good','')}\n"
+                        comp_summary += f"[{comp}] 메시지: {rep.get('msg_good','')} / 비주얼: {rep.get('vis_good','')}\n"
                     
                     own_rep = W["own_analyses"].get("report", {})
-                    own_summary = f"[자사] 메시지장점: {own_rep.get('msg_good','')}\n아쉬운점: {own_rep.get('msg_bad','')}"
+                    # [수정 - 5번] 메시지뿐 아니라 비주얼 강약점까지 포함해서 비교 정확도를 높임
+                    own_summary = (
+                        f"[자사] 메시지 장점: {own_rep.get('msg_good','')}\n"
+                        f"메시지 아쉬운점: {own_rep.get('msg_bad','')}\n"
+                        f"비주얼 장점: {own_rep.get('vis_good','')}\n"
+                        f"비주얼 아쉬운점: {own_rep.get('vis_bad','')}"
+                    )
 
                     GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 경쟁사 그룹과 자사 브랜드 분석 정보입니다.
 두 그룹을 비교해서 아래 내용을 정리해주세요.
 
-[경쟁사 그룹 요약]
+[경쟁사 그룹 요약 (메시지/비주얼)]
 {comp_summary}
 
-[자사 브랜드 요약]
+[자사 브랜드 요약 (메시지/비주얼)]
 {own_summary}
 
 작성 형식:
@@ -801,6 +1020,9 @@ elif nav == "03 · 메시지 갭 분석":
 1. ...
 2. ...
 3. ...
+
+### 비주얼/톤앤매너 측면에서 참고할 점
+- ...
 
 ### 우리만 갖고 있는 강점 (계속 유지할 것)
 - ...
@@ -813,6 +1035,7 @@ elif nav == "03 · 메시지 갭 분석":
                                 GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)
                             )
                             W["gap_analysis"] = resp_text
+                            _persist_work_state()  # [수정 - 5,6번]
                         except Exception as e: st.error(f"오류 발생: {e}")
 
             if W["gap_analysis"]: st.markdown(W["gap_analysis"])
@@ -911,6 +1134,7 @@ elif nav == "04 · 스토리보드 아이디어":
                             )
                         )
                         W["ideas"] = resp_text
+                        _persist_work_state()  # [수정 - 5,6번]
 
                         save_history_entry({
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
@@ -950,6 +1174,7 @@ elif nav == "05 · 히스토리":
         with col_h1: st.caption(f"총 {len(filtered)}건의 기록")
         with col_h2:
             if st.button("전체 기록 삭제"):
+                save_json(HISTORY_FILE, [])
                 if os.path.exists(HISTORY_FILE): os.remove(HISTORY_FILE)
                 st.rerun()
 
