@@ -30,6 +30,9 @@ ensure_package("playwright")
 # --- [추가] 히스토리 영구 저장을 위한 구글시트 연동 패키지 (선택 사항, 미설정 시 자동 미사용) ---
 ensure_package("gspread")
 ensure_package("google-auth", "google.oauth2")
+# --- [추가] 리포트를 워드/PDF 문서로 내보내기 위한 패키지 ---
+ensure_package("python-docx", "docx")
+ensure_package("fpdf2", "fpdf")
 
 import requests
 import streamlit as st
@@ -927,6 +930,145 @@ def gather_collected_materials(segment):
 
 
 # ------------------------------------------------------------------
+# [추가] 리포트 문서 내보내기 (DOCX / PDF)
+# PDF는 한글 폰트가 없으면 글자가 깨지므로, 최초 1회 Noto Sans KR 폰트를
+# 구글 폰트 공식 저장소(raw.githubusercontent.com)에서 내려받아 캐시해 사용합니다.
+# ------------------------------------------------------------------
+_KOREAN_FONT_URL = "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanskr/NotoSansKR%5Bwght%5D.ttf"
+_KOREAN_FONT_PATH = os.path.join(BASE_DIR, "NotoSansKR.ttf")
+
+@st.cache_resource(show_spinner=False)
+def _ensure_korean_font():
+    if os.path.exists(_KOREAN_FONT_PATH):
+        return _KOREAN_FONT_PATH
+    try:
+        resp = requests.get(_KOREAN_FONT_URL, timeout=20)
+        if resp.status_code == 200:
+            with open(_KOREAN_FONT_PATH, "wb") as f:
+                f.write(resp.content)
+            return _KOREAN_FONT_PATH
+    except Exception:
+        pass
+    return None
+
+
+def _add_markdown_to_docx(doc, text):
+    """간단한 마크다운(#, ##, ###, **볼드**)을 워드 문단/제목 스타일로 변환"""
+    for raw_line in (text or "").split("\n"):
+        line = raw_line.rstrip()
+        if not line.strip():
+            doc.add_paragraph("")
+            continue
+        if line.startswith("### "):
+            doc.add_heading(line[4:].strip(), level=3)
+        elif line.startswith("## "):
+            doc.add_heading(line[3:].strip(), level=2)
+        elif line.startswith("# "):
+            doc.add_heading(line[2:].strip(), level=1)
+        else:
+            p = doc.add_paragraph()
+            parts = re.split(r"(\*\*.+?\*\*)", line)
+            for part in parts:
+                if part.startswith("**") and part.endswith("**"):
+                    run = p.add_run(part[2:-2])
+                    run.bold = True
+                else:
+                    p.add_run(part)
+
+
+def build_report_docx(segment, brand_info, insight_text, gap_text, ideas_text):
+    from docx import Document
+    doc = Document()
+    doc.add_heading(f"{segment} 경쟁사 광고 소재 분석 리포트", level=1)
+    doc.add_paragraph(f"생성일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+
+    if brand_info and any(brand_info.values()):
+        doc.add_heading("브랜드 정보", level=2)
+        label_map = {"brand_name": "브랜드/제품명", "brand_product": "제품 설명", "brand_usp": "핵심 USP",
+                     "target_audience": "타겟 고객", "brand_design_memory": "디자인 메모리"}
+        for k, v in brand_info.items():
+            if v: doc.add_paragraph(f"{label_map.get(k, k)}: {v}")
+
+    if insight_text:
+        doc.add_heading("경쟁사 트렌드 인사이트", level=2)
+        _add_markdown_to_docx(doc, insight_text)
+    if gap_text:
+        doc.add_heading("메시지 갭 분석", level=2)
+        _add_markdown_to_docx(doc, gap_text)
+    if ideas_text:
+        doc.add_heading("신규 소재 스토리보드 아이디어", level=2)
+        _add_markdown_to_docx(doc, ideas_text)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def build_report_pdf(segment, brand_info, insight_text, gap_text, ideas_text):
+    from fpdf import FPDF
+    font_path = _ensure_korean_font()
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    if font_path:
+        pdf.add_font("Korean", "", font_path)
+        pdf.set_font("Korean", size=16)
+    else:
+        pdf.set_font("Helvetica", size=16)  # 폰트 다운로드 실패 시 폴백 (한글이 깨질 수 있음)
+
+    pdf.multi_cell(0, 10, f"{segment} 경쟁사 광고 소재 분석 리포트")
+    pdf.set_font_size(10)
+    pdf.multi_cell(0, 6, f"생성일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    pdf.ln(4)
+
+    def _section(title, body):
+        if not body: return
+        pdf.set_font_size(13)
+        pdf.multi_cell(0, 8, title)
+        pdf.set_font_size(10)
+        pdf.multi_cell(0, 6, body.replace("**", "").replace("### ", "").replace("## ", "").replace("# ", ""))
+        pdf.ln(3)
+
+    if brand_info and any(brand_info.values()):
+        label_map = {"brand_name": "브랜드/제품명", "brand_product": "제품 설명", "brand_usp": "핵심 USP",
+                     "target_audience": "타겟 고객", "brand_design_memory": "디자인 메모리"}
+        info_lines = "\n".join([f"{label_map.get(k, k)}: {v}" for k, v in brand_info.items() if v])
+        _section("■ 브랜드 정보", info_lines)
+    _section("■ 경쟁사 트렌드 인사이트", insight_text)
+    _section("■ 메시지 갭 분석", gap_text)
+    _section("■ 신규 소재 스토리보드 아이디어", ideas_text)
+
+    return bytes(pdf.output())
+
+
+def render_export_buttons(segment, brand_info, insight_text, gap_text, ideas_text, key_prefix):
+    """DOCX/PDF 다운로드 버튼 2개를 나란히 표시"""
+    exp_cols = st.columns(2)
+    with exp_cols[0]:
+        try:
+            docx_bytes = build_report_docx(segment, brand_info, insight_text, gap_text, ideas_text)
+            st.download_button(
+                "📄 워드(.docx)로 저장", data=docx_bytes,
+                file_name=f"{segment}_ad_report.docx",
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                key=f"{key_prefix}_docx_dl",
+            )
+        except Exception as e:
+            st.caption(f"워드 생성 실패: {e}")
+    with exp_cols[1]:
+        try:
+            pdf_bytes = build_report_pdf(segment, brand_info, insight_text, gap_text, ideas_text)
+            st.download_button(
+                "📕 PDF로 저장", data=pdf_bytes,
+                file_name=f"{segment}_ad_report.pdf",
+                mime="application/pdf",
+                key=f"{key_prefix}_pdf_dl",
+            )
+        except Exception as e:
+            st.caption(f"PDF 생성 실패: {e}")
+
+
+# ------------------------------------------------------------------
 # [소재 수집 UI] - [수정] 이 단계에서는 AI 분석을 하지 않고 '수집'만 합니다.
 # 실제 AI 분석(경쟁사 통합 + 자사 통합 + 갭 비교)은 03번 탭에서 단 1회의 API 호출로 처리해서
 # 무료 API 요금제의 분당 요청 한도를 아끼도록 구조를 바꿨습니다.
@@ -1058,13 +1200,55 @@ def _persist_work_state():
 # 01 · 경쟁사 소재 분석
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다. 여기서는 소재만 모으고, 실제 AI 분석은 03번 탭에서 한 번에 진행해요.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "여러 경쟁사 소재를 모아두면, 03번 탭에서 전체를 하나로 인식해 통합 분석합니다. 여기서는 소재만 모아요.")
 
     competitors = load_competitors()[segment]
-    
+
+    # [추가] 수집 현황 체크리스트 - 지금까지 어떤 경쟁사가 몇 건 모였는지 한눈에 표시
+    checklist = []
+    for c in competitors:
+        n = len(st.session_state.get(f"comp_items_{c}", []))
+        checklist.append(f"{'✅' if n > 0 else '⬜'} {c}" + (f" ({n}건)" if n > 0 else ""))
+    st.markdown(f"<div class='sidebar-caption' style='margin-left:0;'>수집 현황</div><div style='font-size:13px; margin-bottom:12px;'>{' &nbsp;·&nbsp; '.join(checklist)}</div>", unsafe_allow_html=True)
+
+    # [추가] 여러 경쟁사 한 번에 자동 수집
+    with st.expander("🚀 여러 경쟁사 한 번에 자동 수집 (추천)", expanded=not any(len(st.session_state.get(f"comp_items_{c}", [])) > 0 for c in competitors)):
+        bulk_selected = st.multiselect("수집할 경쟁사를 모두 선택하세요", competitors, key=f"{segment}_bulk_select")
+        if st.button("선택한 경쟁사 전체 자동 수집 실행", type="primary", key=f"{segment}_bulk_crawl_btn"):
+            if not bulk_selected:
+                st.warning("최소 1개 이상의 경쟁사를 선택해주세요.")
+            else:
+                with st.status(f"{len(bulk_selected)}개 경쟁사 순차 수집 중...", expanded=True) as bulk_status:
+                    for c in bulk_selected:
+                        url = META_URL_MAP.get(c, "")
+                        if not url:
+                            st.warning(f"'{c}'는 등록된 메타 URL이 없어 건너뜁니다. (아래 개별 수집 탭 → 예비 업로드로 추가해주세요)")
+                            continue
+                        def _bulk_cb(msg, _c=c):
+                            bulk_status.update(label=f"[{_c}] {msg}")
+                        ads, debug_info, err = scrape_meta_ads_with_playwright(
+                            url, max_items=12, selectors=load_selectors(), status_callback=_bulk_cb
+                        )
+                        if err:
+                            st.error(f"❌ '{c}' 수집 실패: {err}")
+                        elif not ads:
+                            st.info(f"⚠️ '{c}' 활성 광고를 찾지 못했습니다.")
+                        else:
+                            st.session_state[f"comp_items_{c}"] = ads
+                            vcount = debug_info.get("video_count", 0)
+                            msg = f"✅ '{c}' 이미지 소재 {len(ads)}건 수집 완료"
+                            if vcount: msg += f" (동영상 {vcount}건 제외)"
+                            st.success(msg)
+                    bulk_status.update(label="전체 일괄 수집 완료!", state="complete")
+                time.sleep(0.8)
+                st.rerun()
+
+    st.divider()
+    st.markdown("**개별 수집 / URL 직접 확인이 필요할 때**")
+
     comp_col, add_col = st.columns([4, 1.2])
     with comp_col:
-        selected_competitor = st.selectbox("분석할 경쟁사", competitors, key=f"{segment}_comp_select")
+        selected_competitor = st.selectbox("경쟁사 선택", competitors, key=f"{segment}_comp_select")
     with add_col:
         st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
         with st.popover("+ 새 경쟁사 추가", use_container_width=True):
@@ -1195,6 +1379,10 @@ elif nav == "03 · 메시지 갭 분석":
         st.divider()
         st.markdown("### 📊 경쟁사 + 자사 통합 분석 리포트")
         st.markdown(W["gap_analysis"])
+        st.divider()
+        if st.button("📝 이 결과로 신규 소재 아이디어 만들기 →", type="primary", key="jump_to_04"):
+            st.session_state["nav_selector"] = "🎬 04 · 스토리보드 아이디어"
+            st.rerun()
     elif W.get("insight"):
         st.divider()
         st.markdown("### 📊 경쟁사 트렌드 리포트")
@@ -1204,52 +1392,45 @@ elif nav == "03 · 메시지 갭 분석":
 # 04 · 스토리보드 아이디어
 # ------------------------------------------------------------------
 elif nav == "04 · 스토리보드 아이디어":
-    section_header("04", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드 정보를 입력하고 기획안을 생성합니다.")
+    section_header("04", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드/제품명만 입력해도 바로 생성돼요. 나머지 정보는 선택이에요 (채우면 더 정교해집니다).")
 
-    with st.expander(f"{segment} 브랜드 정보 입력 / 수정", expanded=True):
-        all_brands = load_all_brands()
-        saved_brand = all_brands.get(segment, {})
-        for fkey, default in [
-            ("brand_name", ""), ("brand_product", ""), ("brand_usp", ""),
-            ("target_audience", ""), ("brand_design_memory", ""),
-        ]:
-            skey = f"{segment}_{fkey}"
-            if skey not in st.session_state:
-                st.session_state[skey] = saved_brand.get(fkey, default)
+    all_brands = load_all_brands()
+    saved_brand = all_brands.get(segment, {})
+    for fkey, default in [
+        ("brand_name", ""), ("brand_product", ""), ("brand_usp", ""),
+        ("target_audience", ""), ("brand_design_memory", ""),
+    ]:
+        skey = f"{segment}_{fkey}"
+        if skey not in st.session_state:
+            st.session_state[skey] = saved_brand.get(fkey, default)
 
+    # [수정] 필수 입력은 브랜드/제품명 1개만 - 나머지는 선택(펼쳐보기)로 축소해서 진입 장벽을 낮췄습니다.
+    brand_name = st.text_input("브랜드/제품명 *", key=f"{segment}_brand_name", placeholder="예: 브랜드명 입력")
+
+    with st.expander("선택 입력 (없어도 진행돼요 - 채우면 더 정교한 아이디어가 나옵니다)", expanded=False):
         col_a, col_b = st.columns(2)
         with col_a:
-            brand_name = st.text_input("브랜드/제품명", key=f"{segment}_brand_name", placeholder="예: 브랜드명 입력")
             brand_usp = st.text_area("핵심 셀링포인트 (USP)", key=f"{segment}_brand_usp", placeholder="예: 우리 제품만의 차별점")
-        with col_b:
-            brand_product = st.text_area("제품/서비스 설명", key=f"{segment}_brand_product", placeholder="예: 제공하는 제품/서비스 설명")
             target_audience = st.text_input("타겟 고객층", key=f"{segment}_target_audience", placeholder="예: 학부모 / 자녀 연령대 등")
-
-        st.markdown("**디자인 톤앤매너 및 레퍼런스 메모리**")
-        brand_design_memory = st.text_area(
-            "디자인 메모리", key=f"{segment}_brand_design_memory",
-            placeholder="예: 밝고 친근한 톤, 학습 효과를 강조, 과장된 비교 광고는 지양함.",
-            height=100, label_visibility="collapsed",
-        )
-
-        save_col, status_col = st.columns([1, 3])
-        with save_col:
-            if st.button("저장", type="primary", key=f"{segment}_brand_save"):
-                save_brand(segment, {
-                    "brand_name": brand_name, "brand_product": brand_product, "brand_usp": brand_usp,
-                    "target_audience": target_audience, "brand_design_memory": brand_design_memory,
-                })
-                st.session_state[f"{segment}_brand_saved"] = True
-        with status_col:
-            if st.session_state.get(f"{segment}_brand_saved"): st.caption("저장되었습니다.")
+        with col_b:
+            brand_product = st.text_area("제품/서비스 설명", key=f"{segment}_brand_product", placeholder="비워두면 03번 자사 소재 분석 내용으로 자동 추정합니다")
+            brand_design_memory = st.text_area(
+                "디자인 톤앤매너 메모리", key=f"{segment}_brand_design_memory",
+                placeholder="예: 밝고 친근한 톤, 과장된 비교 광고는 지양함",
+            )
+        if st.button("이 정보 저장해두기", key=f"{segment}_brand_save"):
+            save_brand(segment, {
+                "brand_name": brand_name, "brand_product": brand_product, "brand_usp": brand_usp,
+                "target_audience": target_audience, "brand_design_memory": brand_design_memory,
+            })
+            st.success("저장되었습니다. 다음에 이 부문(세그먼트)을 열면 자동으로 채워져요.")
 
     st.divider()
 
     comp_materials, own_bytes = gather_collected_materials(segment)
-    comp_img_total = sum(len(v) for v in comp_materials.values())
 
-    if not brand_name or not brand_product:
-        st.warning("위에서 '브랜드/제품명'과 '제품 설명'을 먼저 입력하고 저장해 주세요.")
+    if not brand_name.strip():
+        st.warning("브랜드/제품명만 입력하면 바로 생성할 수 있어요. ⬆️ 위 칸을 채워주세요.")
     elif not comp_materials:
         st.info("먼저 01 탭에서 경쟁사 소재를 수집해 주세요.")
     else:
@@ -1260,9 +1441,12 @@ elif nav == "04 · 스토리보드 아이디어":
                 st.error("상단에서 API Key를 입력해 주세요.")
             else:
                 gap_context = W.get("gap_analysis") or W.get("insight") or "없음 (아직 03 탭에서 통합 분석을 실행하지 않음)"
+                # [수정] 제품 설명을 안 채웠으면 세그먼트명으로 기본값 대체
+                effective_product = brand_product.strip() if brand_product.strip() else f"{segment} 대상 학습 서비스/제품"
 
                 STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
 그리고 자사 디자인 메모리를 반영하여 차별화된 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
+브랜드 정보 중 비어있는 항목은 메시지 갭 분석 내용을 참고해서 합리적으로 추정해 진행해주세요.
 
 [자사 브랜드 정보]
 - 브랜드/제품명: {brand_name}
@@ -1291,8 +1475,9 @@ elif nav == "04 · 스토리보드 아이디어":
                             st.session_state["current_ai_provider"],
                             st.session_state["current_api_key"],
                             STORYBOARD_PROMPT.format(
-                                brand_name=brand_name, brand_product=brand_product, brand_usp=brand_usp,
-                                target_audience=target_audience,
+                                brand_name=brand_name, brand_product=effective_product,
+                                brand_usp=brand_usp or "미입력 (갭 분석 참고해서 추정)",
+                                target_audience=target_audience or "미입력 (세그먼트 특성 기준으로 추정)",
                                 design_memory=brand_design_memory or "기본 톤앤매너",
                                 gap_context=gap_context
                             ),
@@ -1300,13 +1485,13 @@ elif nav == "04 · 스토리보드 아이디어":
                         )
                         story_status.update(label="스토리보드 완성!", state="complete")
                         W["ideas"] = resp_text
-                        _persist_work_state()  # [수정 - 5,6번]
+                        _persist_work_state()
 
                         save_history_entry({
                             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
                             "segment": segment,
                             "brand_name": brand_name,
-                            "brand_product": brand_product,
+                            "brand_product": effective_product,
                             "target_audience": target_audience,
                             "material_count": len(comp_materials) + (1 if own_bytes else 0),
                             "insight": W.get("insight", ""),
@@ -1323,9 +1508,16 @@ elif nav == "04 · 스토리보드 아이디어":
         if W["ideas"]:
             st.markdown(W["ideas"])
             st.divider()
+            st.markdown("**📥 01~04 전체 내용 문서로 저장**")
+            _brand_info = {
+                "brand_name": brand_name, "brand_product": brand_product, "brand_usp": brand_usp,
+                "target_audience": target_audience, "brand_design_memory": brand_design_memory,
+            }
+            render_export_buttons(segment, _brand_info, W.get("insight", ""), W.get("gap_analysis", ""), W["ideas"], key_prefix="tab04")
             st.download_button(
-                "광고 기획안 다운로드 (.md)", data=W["ideas"],
+                "📝 아이디어만 마크다운(.md)으로 저장", data=W["ideas"],
                 file_name=f"{segment}_ad_winning_storyboards.md", mime="text/markdown",
+                key="tab04_md_dl",
             )
 
 # ------------------------------------------------------------------
@@ -1364,8 +1556,17 @@ elif nav == "05 · 히스토리":
                     st.divider()
                 st.markdown("**스토리보드 아이디어**")
                 st.markdown(entry.get("ideas", ""))
+                st.divider()
+                st.caption("📥 이 기록 문서로 저장")
+                render_export_buttons(
+                    entry.get("segment", segment),
+                    {"brand_name": entry.get("brand_name", ""), "brand_product": entry.get("brand_product", ""),
+                     "target_audience": entry.get("target_audience", "")},
+                    entry.get("insight", ""), entry.get("gap_analysis", ""), entry.get("ideas", ""),
+                    key_prefix=f"history_{i}",
+                )
                 st.download_button(
-                    "이 결과 다운로드 (.md)", data=entry.get("ideas", ""),
+                    "📝 아이디어만 마크다운(.md)으로 저장", data=entry.get("ideas", ""),
                     file_name=f"ad_ideas_{entry.get('timestamp', '').replace(':', '').replace(' ', '_')}.md",
                     mime="text/markdown", key=f"history_dl_{i}",
                 )
