@@ -132,7 +132,7 @@ div[data-baseweb="tag"],
 div[data-baseweb="select"] {
     background-color: #FFFFFF !important;
     background: #FFFFFF !important;
-    color: #191B29 !important;
+    color: var(--ink) !important;
     border-color: var(--border) !important;
 }
 
@@ -140,7 +140,7 @@ div[data-baseweb="select"] span,
 div[data-baseweb="select"] div,
 [data-baseweb="select"] * {
     background-color: transparent !important;
-    color: #191B29 !important;
+    color: var(--ink) !important;
 }
 
 div[data-baseweb="popover"] ul,
@@ -148,50 +148,35 @@ div[data-baseweb="popover"] li,
 div[role="listbox"],
 li[role="option"] {
     background-color: #FFFFFF !important;
-    color: #191B29 !important;
+    color: var(--ink) !important;
 }
 li[role="option"]:hover,
 li[aria-selected="true"] {
     background-color: var(--primary-soft) !important;
-    color: #FFFFFF !important;
+    color: var(--ink) !important;
 }
 
 .align-bottom-btn { margin-top: 28px; }
 
 /* ------------------------------------------------------------------
-   [추가 CSS] 멀티셀렉트 선택 태그(칩)가 어두운 배경 + 검정 글자로 나와
-   가독성이 떨어지는 문제 수정. primary-soft 배경 + primary 글자로
-   확실한 대비를 강제 적용합니다.
+   [추가 CSS] 멀티셀렉트 선택 태그(칩) - 남색 배경은 그대로 두고, 글자/아이콘 색만
+   흰색으로 강제. Streamlit 내부 스타일보다 확실히 이기도록 'html body' 접두사로
+   특이도(specificity)를 크게 높여서 적용합니다.
 ------------------------------------------------------------------ */
-div[data-baseweb="tag"],
-span[data-baseweb="tag"],
-[data-baseweb="tag"] {
-    background-color: var(--primary-soft) !important;
-    border: 1px solid var(--primary) !important;
-    color: var(--primary) !important; /* 칩 안의 글씨 색상 */
+html body [data-testid="stMultiSelect"] span[data-baseweb="tag"],
+html body [data-testid="stMultiSelect"] div[data-baseweb="tag"] {
+    color: #FFFFFF !important;
 }
-div[data-baseweb="tag"] *,
-span[data-baseweb="tag"] *,
-[data-baseweb="tag"] * {
-    background-color: transparent !important;
-    color: var(--primary) !important;
-    fill: var(--primary) !important;
+html body [data-testid="stMultiSelect"] span[data-baseweb="tag"] *,
+html body [data-testid="stMultiSelect"] div[data-baseweb="tag"] * {
+    color: #FFFFFF !important;
+    fill: #FFFFFF !important;
+    stroke: #FFFFFF !important;
 }
-div[data-baseweb="tag"] svg,
-span[data-baseweb="tag"] svg {
-    fill: var(--primary) !important;
-}
-/* [추가] Streamlit 버전에 따라 baseweb 속성명이 달라질 수 있어, testid 기준으로 한 번 더 강제 적용 */
-[data-testid="stMultiSelect"] * {
-    color: var(--primary) !important;
-    fill: var(--primary) !important;
-}
-[data-testid="stMultiSelect"] [data-baseweb="tag"],
-[data-testid="stMultiSelect"] span[role="button"],
-[data-testid="stMultiSelect"] div[role="button"] {
-    background-color: var(--primary-soft) !important;
-    border: 1px solid var(--primary) !important;
-    border-radius: 6px !important;
+html body [data-testid="stMultiSelect"] span[data-baseweb="tag"] svg,
+html body [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg {
+    fill: #FFFFFF !important;
+    opacity: 1 !important;
 }
 
 /* ------------------------------------------------------------------
@@ -208,7 +193,6 @@ div[data-baseweb="datepicker"] {
     background-color: #FFFFFF !important;
     color: var(--ink) !important;
 }
-svg { fill: currentColor; }
 input, textarea { caret-color: var(--ink) !important; }
 
 /* ------------------------------------------------------------------
