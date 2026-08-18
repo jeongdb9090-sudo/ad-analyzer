@@ -132,7 +132,7 @@ div[data-baseweb="tag"],
 div[data-baseweb="select"] {
     background-color: #FFFFFF !important;
     background: #FFFFFF !important;
-    color: var(--ink) !important;
+    color: #FFFFFF !important;
     border-color: var(--border) !important;
 }
 
@@ -140,7 +140,7 @@ div[data-baseweb="select"] span,
 div[data-baseweb="select"] div,
 [data-baseweb="select"] * {
     background-color: transparent !important;
-    color: var(--ink) !important;
+    color: #FFFFFF !important;
 }
 
 div[data-baseweb="popover"] ul,
@@ -153,7 +153,7 @@ li[role="option"] {
 li[role="option"]:hover,
 li[aria-selected="true"] {
     background-color: var(--primary-soft) !important;
-    color: var(--ink) !important;
+    color: #FFFFFF !important;
 }
 
 .align-bottom-btn { margin-top: 28px; }
