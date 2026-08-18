@@ -481,6 +481,16 @@ _EXTRACT_ADS_JS = """
     const scope = cards.length ? cards : [document.body];
     if (!cards.length) usedSelector = 'FALLBACK: document.body';
 
+    // [추가 - 3번] 영상 소재는 이미지가 아니라서 수집 대상에서 자동 제외되는데,
+    // "왜 개수가 안 맞지?" 헷갈리지 않도록 몇 건이 영상이라 제외됐는지 별도로 셉니다.
+    const seenVideoCards = new Set();
+    scope.forEach((card, idx) => {
+        const hasVideoTag = card.querySelector('video') !== null;
+        const hasVideoAttr = card.querySelector('[aria-label*="video" i], [aria-label*="동영상"]') !== null;
+        if (hasVideoTag || hasVideoAttr) seenVideoCards.add(idx);
+    });
+    const videoCount = seenVideoCards.size;
+
     const seen = new Set();
     const items = [];
     scope.forEach((card) => {
@@ -518,7 +528,7 @@ _EXTRACT_ADS_JS = """
             items.push({ src, bodyText });
         });
     });
-    return { usedSelector, cardCount: cards.length, items };
+    return { usedSelector, cardCount: cards.length, items, videoCount };
 }
 """
 
@@ -534,7 +544,7 @@ def _upgrade_image_resolution(url):
 
 def _scrape_once(library_url, max_items, cfg, status_callback=None):
     results = []
-    debug_info = {"used_selector": None, "card_count": 0}
+    debug_info = {"used_selector": None, "card_count": 0, "video_count": 0}
     
     if status_callback: status_callback("브라우저 엔진을 구동하고 있습니다...")
     with sync_playwright() as p:
@@ -576,6 +586,7 @@ def _scrape_once(library_url, max_items, cfg, status_callback=None):
             extracted = page.evaluate(_EXTRACT_ADS_JS, cfg)
             debug_info["used_selector"] = extracted.get("usedSelector")
             debug_info["card_count"] = extracted.get("cardCount", 0)
+            debug_info["video_count"] = extracted.get("videoCount", 0)  # [추가 - 3번]
             
             total_items = extracted.get("items", [])[:max_items]
             for idx, item in enumerate(total_items, start=1):
@@ -611,10 +622,10 @@ def scrape_meta_ads_with_playwright(library_url, max_items=12, selectors=None, s
             return scrape_meta_ads_with_playwright(library_url, max_items, cfg, status_callback, _retry=False)
         return [], {"used_selector": None, "card_count": 0}, f"오류 발생: {err_text}"
 
-def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
+def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180), max_images=12):
     try:
         pil_images = []
-        for b in images_bytes_list[:12]:
+        for b in images_bytes_list[:max_images]:
             if not b: continue
             try:
                 img = Image.open(io.BytesIO(b)).convert("RGB")
@@ -632,22 +643,107 @@ def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180)):
         return buf.getvalue()
     except Exception: return None
 
-BRAND_INTEGRATED_ANALYSIS_PROMPT = """당신은 수석 퍼포먼스 마케팅 크리에이티브 분석가입니다.
-제시된 브랜드 '{brand_name}'이 메타 라이브러리에서 현재 동시 운영 중인 전체 광고 소재 그리드 이미지를 통째로 조망하고 객관적인 브랜드 통합 분석을 진행해 주세요.
-메시지_좋은점: (이 브랜드 소재들에서 강조되는 핵심 메인 메시지 및 소구 포인트 전략 강점 2문장)
-메시지_아쉬운점: (메시지 측면에서 진부하거나 보완이 필요한 점 1~2문장)
-메시지_평점: (숫자만 1~5)
-비주얼_좋은점: (전체적인 키 비주얼, 색감, 톤앤매너, 레이아웃 차별성 및 강점 2문장)
-비주얼_아쉬운점: (시각적 피로도나 디자인 요소 측면에서 아쉬운 점 1~2문장)
-비주얼_평점: (숫자만 1~5)
-종합_총평: (전체 광고 소재가 예상 타겟층에게 전달되는 판독성 및 브랜드 타겟팅 종합 한줄 총평)
-종합_평점: (숫자만 1~5)
+
+def create_split_collage(top_images_bytes, bottom_images_bytes, cols=4, thumb_size=(160, 160),
+                          top_max=16, bottom_max=12):
+    """
+    [추가 - 통합분석] 경쟁사(여러 브랜드 통합) 콜라주를 위쪽에, 자사 콜라주를 아래쪽에 놓고
+    가운데 굵은 컬러 구분선을 넣어 하나의 이미지로 합칩니다.
+    이렇게 하면 AI 호출 1번으로 두 그룹을 동시에 보여주고 비교시킬 수 있어 무료 API 한도를 아낄 수 있습니다.
+    """
+    try:
+        def _make_block(images_bytes, max_n):
+            pil_images = []
+            for b in images_bytes[:max_n]:
+                if not b: continue
+                try:
+                    img = Image.open(io.BytesIO(b)).convert("RGB")
+                    img.thumbnail(thumb_size)
+                    pil_images.append(img)
+                except Exception: pass
+            if not pil_images: return None
+            rows = (len(pil_images) + cols - 1) // cols
+            block = Image.new("RGB", (cols * thumb_size[0], rows * thumb_size[1]), (255, 255, 255))
+            for idx, img in enumerate(pil_images):
+                block.paste(img, ((idx % cols) * thumb_size[0], (idx // cols) * thumb_size[1]))
+            return block
+
+        top_block = _make_block(top_images_bytes, top_max)
+        bottom_block = _make_block(bottom_images_bytes, bottom_max)
+        if top_block is None and bottom_block is None: return None
+
+        width = cols * thumb_size[0]
+        divider_h = 26
+        top_h = top_block.height if top_block else 0
+        bottom_h = bottom_block.height if bottom_block else 0
+        total_h = top_h + (divider_h if top_block and bottom_block else 0) + bottom_h
+        combined = Image.new("RGB", (width, total_h), (255, 255, 255))
+        y = 0
+        if top_block:
+            combined.paste(top_block, (0, 0))
+            y += top_h
+        if top_block and bottom_block:
+            from PIL import ImageDraw
+            draw = ImageDraw.Draw(combined)
+            draw.rectangle([0, y, width, y + divider_h], fill=(217, 119, 6))  # 오렌지색 구분선(위=경쟁사, 아래=자사)
+            y += divider_h
+        if bottom_block:
+            combined.paste(bottom_block, (0, y))
+
+        buf = io.BytesIO()
+        combined.save(buf, format="JPEG", quality=70)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+COMBINED_GAP_ANALYSIS_PROMPT = """당신은 수석 브랜드 전략 컨설턴트 겸 퍼포먼스 마케팅 분석가입니다.
+첨부한 이미지는 위/아래 두 구역으로 나뉘어 있고, 가운데 오렌지색 굵은 줄로 구분되어 있습니다.
+- **이미지의 위쪽 구역**: 여러 경쟁사들({competitor_names})의 광고 소재를 한데 모은 콜라주입니다. 개별 브랜드 구분 없이, 경쟁사 그룹 전체가 공통적으로 어떤 메시지/비주얼 전략을 쓰고 있는지 통합적으로 파악해주세요.
+- **이미지의 아래쪽 구역**: 자사({own_brand_label}) 광고 소재를 모은 콜라주입니다.
+
+두 구역을 비교 분석해서 아래 형식으로 정리해주세요. 각 항목은 실제 이미지에서 관찰되는 내용에 근거해서 구체적으로 작성해주세요.
+
+### 1. 경쟁사 공통 위닝 포인트 (3가지)
+1. **[키워드]**: 설명...
+2. **[키워드]**: 설명...
+3. **[키워드]**: 설명...
+
+### 2. 자사 소재 강점 / 아쉬운 점
+- 👍 강점: ...
+- 👎 아쉬운 점: ...
+
+### 3. 경쟁사는 다루지만 자사 소재에는 부족한 메시지
+- ...
+
+### 4. 보강하면 좋을 메시지 (우선순위 순, 이유 포함)
+1. ...
+2. ...
+3. ...
+
+### 5. 비주얼/톤앤매너 측면에서 참고할 점
+- ...
+
+### 6. 우리만 갖고 있는 강점 (계속 유지할 것)
+- ...
+"""
+
+COMPETITOR_ONLY_TREND_PROMPT = """당신은 수석 브랜드 전략가입니다. 첨부한 이미지는 여러 경쟁사({competitor_names})의
+광고 소재를 한데 모은 콜라주입니다. 개별 브랜드 구분 없이 경쟁사 그룹 전체가 공통적으로 활용하는
+성공 패턴(위닝 포인트)을 아래 형식으로 정리해주세요.
+
+### 핵심 위닝 포인트 3가지
+1. **[키워드]**: 설명...
+2. **[키워드]**: 설명...
+3. **[키워드]**: 설명...
+
+### 종합 마케팅 인사이트
+- 시장 내 공통적인 소구 트렌드 및 시사점
 """
 
 _SCORE_LABEL_TO_KEY = {
     "메시지_좋은점": "msg_good", "메시지_아쉬운점": "msg_bad", "메시지_평점": "msg_score",
     "비주얼_좋은점": "vis_good", "비주얼_아쉬운점": "vis_bad", "비주얼_평점": "vis_score",
-    "종합_총평": "overall_desc", "종합_평점": "overall_score",
 }
 _SCORE_EMPTY = {k: "" for k in _SCORE_LABEL_TO_KEY.values()}
 
@@ -685,50 +781,157 @@ def render_integrated_scorecard(report):
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
-def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None):
-    if ai_provider == "Gemini (Google)":
+class QuotaExceededError(Exception):
+    """무료 티어 쿼터/레이트리밋(429) 초과 - 재시도로도 해결 안 될 때 사용자에게 안내할 전용 예외"""
+    pass
+
+
+def _extract_retry_seconds(err_text, default=15):
+    """구글 API 에러 메시지에 담긴 'retry_delay { seconds: N }' 값을 파싱, 없으면 기본값 사용"""
+    m = re.search(r"retry_delay\s*\{\s*seconds:\s*(\d+)", err_text)
+    if m: return int(m.group(1)) + 1
+    m2 = re.search(r"retry in ([\d.]+)s", err_text, re.IGNORECASE)
+    if m2: return int(float(m2.group(1))) + 1
+    return default
+
+
+def _call_gemini(api_key, prompt_text, collage_bytes):
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        subprocess.run(["pip", "install", "google-generativeai"], check=True)
+        import google.generativeai as genai
+    genai.configure(api_key=api_key)
+    # [수정 - 3번] gemini-1.5-pro는 완전히 서비스 종료(404)됨.
+    # -latest 별칭을 사용하면 구글이 모델을 교체해도 자동으로 최신 모델을 가리켜서
+    # 앞으로 이런 단종 문제가 재발할 확률이 낮습니다.
+    model = genai.GenerativeModel("gemini-flash-latest")
+    contents = [prompt_text]
+    if collage_bytes: contents.append(Image.open(io.BytesIO(collage_bytes)))
+    return model.generate_content(contents).text
+
+
+def _call_openai(api_key, prompt_text, collage_bytes):
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+    content_payload = [{"type": "text", "text": prompt_text}]
+    if collage_bytes:
+        content_payload.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(collage_bytes).decode('utf-8')}"}})
+    # [수정 - 3번] gpt-4o -> gpt-5.1 (최신 플래그십, 비전 지원)
+    return client.chat.completions.create(model="gpt-5.1", messages=[{"role": "user", "content": content_payload}]).choices[0].message.content
+
+
+def _call_claude(api_key, prompt_text, collage_bytes):
+    import anthropic
+    client = anthropic.Anthropic(api_key=api_key)
+    content_payload = []
+    if collage_bytes:
+        content_payload.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(collage_bytes).decode('utf-8')}})
+    content_payload.append({"type": "text", "text": prompt_text})
+    # [수정 - 3번] claude-3-5-sonnet-20241022 -> claude-sonnet-5 (최신 모델)
+    return client.messages.create(model="claude-sonnet-5", max_tokens=2000, messages=[{"role": "user", "content": content_payload}]).content[0].text
+
+
+def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None, status_callback=None, max_retries=3):
+    """
+    [수정 - 2번] 무료 API 요금제는 분당 요청 횟수가 매우 낮게 제한되어 있어(예: Gemini 무료 티어
+    분당 5회) '429 quota exceeded' 오류가 자주 발생합니다. 이 함수는 그 오류를 감지하면
+    에러 메시지 안의 재시도 대기 시간(retry_delay)만큼 자동으로 기다렸다가 최대 max_retries번
+    다시 시도합니다. 진행 상황은 status_callback으로 화면에 실시간 보고합니다.
+    """
+    dispatch = {
+        "Gemini (Google)": _call_gemini,
+        "ChatGPT (OpenAI)": _call_openai,
+        "Claude (Anthropic)": _call_claude,
+    }
+    fn = dispatch.get(ai_provider)
+    if fn is None:
+        raise ValueError(f"알 수 없는 AI 엔진: {ai_provider}")
+
+    last_err_text = ""
+    for attempt in range(1, max_retries + 1):
+        if status_callback:
+            status_callback(f"{ai_provider} 모델을 호출하는 중입니다... (시도 {attempt}/{max_retries})")
         try:
-            import google.generativeai as genai
-        except ImportError:
-            subprocess.run(["pip", "install", "google-generativeai"], check=True)
-            import google.generativeai as genai
-        
-        genai.configure(api_key=api_key)
-        # [수정 - 3번] gemini-1.5-pro는 완전히 서비스 종료(404)됨.
-        # -latest 별칭을 사용하면 구글이 모델을 교체해도 자동으로 최신 모델을 가리켜서
-        # 앞으로 이런 단종 문제가 재발할 확률이 낮습니다.
-        model = genai.GenerativeModel("gemini-flash-latest")
-        contents = [prompt_text]
-        if collage_bytes: contents.append(Image.open(io.BytesIO(collage_bytes)))
-        return model.generate_content(contents).text
+            result_text = fn(api_key, prompt_text, collage_bytes)
+            if status_callback: status_callback("응답을 받았습니다. 리포트로 정리하는 중...")
+            return result_text
+        except Exception as e:
+            err_text = str(e)
+            last_err_text = err_text
+            is_quota_error = ("429" in err_text or "quota" in err_text.lower() or "rate" in err_text.lower())
+            if is_quota_error and attempt < max_retries:
+                wait_s = _extract_retry_seconds(err_text)
+                if status_callback:
+                    status_callback(f"⏳ 무료 API 사용량 한도에 걸렸습니다. {wait_s}초 후 자동 재시도합니다... ({attempt}/{max_retries})")
+                time.sleep(wait_s)
+                continue
+            elif is_quota_error:
+                raise QuotaExceededError(
+                    f"{ai_provider}의 무료 API 사용량 한도를 초과했습니다. "
+                    f"잠시 후 다시 시도하시거나, Google AI Studio에서 결제(유료 티어)를 활성화하면 "
+                    f"한도가 크게 늘어납니다. (원본 오류: {err_text[:200]})"
+                )
+            else:
+                raise
+    raise QuotaExceededError(f"{max_retries}회 재시도했지만 계속 실패했습니다: {last_err_text[:200]}")
 
-    elif ai_provider == "ChatGPT (OpenAI)":
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-        content_payload = [{"type": "text", "text": prompt_text}]
-        if collage_bytes:
-            content_payload.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64.b64encode(collage_bytes).decode('utf-8')}"}})
-        # [수정 - 3번] gpt-4o -> gpt-5.1 (최신 플래그십, 비전 지원)
-        return client.chat.completions.create(model="gpt-5.1", messages=[{"role": "user", "content": content_payload}]).choices[0].message.content
 
-    elif ai_provider == "Claude (Anthropic)":
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        content_payload = []
-        if collage_bytes:
-            content_payload.append({"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(collage_bytes).decode('utf-8')}})
-        content_payload.append({"type": "text", "text": prompt_text})
-        # [수정 - 3번] claude-3-5-sonnet-20241022 -> claude-sonnet-5 (최신 모델)
-        return client.messages.create(model="claude-sonnet-5", max_tokens=2000, messages=[{"role": "user", "content": content_payload}]).content[0].text
+def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes_list, status_callback=None):
+    """(현재는 03번 탭에서 사용하지 않는 레거시 함수 - 필요 시 개별 브랜드 분석용으로 재사용 가능)"""
+    if status_callback: status_callback("소재 이미지를 하나의 콜라주로 합치는 중...")
+    collage = create_image_grid_collage(images_bytes_list)
+    text = run_unified_ai_prompt(
+        ai_provider, api_key,
+        BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name),
+        collage, status_callback=status_callback,
+    )
+    if status_callback: status_callback("리포트 항목을 파싱하는 중...")
+    return parse_integrated_report(text)
 
-def run_brand_integrated_analysis(ai_provider, api_key, brand_name, images_bytes_list):
-    return parse_integrated_report(run_unified_ai_prompt(ai_provider, api_key, BRAND_INTEGRATED_ANALYSIS_PROMPT.format(brand_name=brand_name), create_image_grid_collage(images_bytes_list)))
+
+def run_combined_gap_analysis(ai_provider, api_key, competitor_images, own_images, competitor_names, own_brand_label, status_callback=None):
+    """
+    [핵심 - 03번 탭] 경쟁사 여러 브랜드의 소재를 하나로, 자사 소재를 하나로 인식시켜
+    AI 호출 단 1번으로 '경쟁사 공통 위닝포인트 + 자사 강약점 + 메시지 갭'을 모두 받아옵니다.
+    """
+    if status_callback: status_callback("경쟁사 소재 콜라주 + 자사 소재 콜라주를 하나의 이미지로 합치는 중...")
+    combined_img = create_split_collage(competitor_images, own_images)
+    names_str = ", ".join(competitor_names) if competitor_names else "경쟁사"
+    prompt = COMBINED_GAP_ANALYSIS_PROMPT.format(competitor_names=names_str, own_brand_label=own_brand_label)
+    return run_unified_ai_prompt(ai_provider, api_key, prompt, combined_img, status_callback=status_callback)
+
+
+def run_competitor_trend_only(ai_provider, api_key, competitor_images, competitor_names, status_callback=None):
+    """자사 소재가 아직 없을 때, 경쟁사 소재만으로 트렌드 인사이트를 뽑는 보조 함수 (AI 호출 1번)"""
+    if status_callback: status_callback("경쟁사 소재를 하나의 콜라주로 합치는 중...")
+    collage = create_image_grid_collage(competitor_images, max_images=16)
+    names_str = ", ".join(competitor_names) if competitor_names else "경쟁사"
+    prompt = COMPETITOR_ONLY_TREND_PROMPT.format(competitor_names=names_str)
+    return run_unified_ai_prompt(ai_provider, api_key, prompt, collage, status_callback=status_callback)
+
+
+def gather_collected_materials(segment):
+    """01/02번 탭에서 세션에 모아둔 이미지를 브랜드별로 취합 (03/04번 탭 공용)"""
+    competitors = load_competitors().get(segment, [])
+    comp_materials = {}
+    for c in competitors:
+        items = st.session_state.get(f"comp_items_{c}", [])
+        byte_list = [it["bytes"] for it in items if it.get("bytes")]
+        if byte_list:
+            comp_materials[c] = byte_list
+    own_key = f"own_items_자사({segment})"
+    own_items = st.session_state.get(own_key, [])
+    own_bytes = [it["bytes"] for it in own_items if it.get("bytes")]
+    return comp_materials, own_bytes
 
 
 # ------------------------------------------------------------------
-# [소재 수집 UI]
+# [소재 수집 UI] - [수정] 이 단계에서는 AI 분석을 하지 않고 '수집'만 합니다.
+# 실제 AI 분석(경쟁사 통합 + 자사 통합 + 갭 비교)은 03번 탭에서 단 1회의 API 호출로 처리해서
+# 무료 API 요금제의 분당 요청 한도를 아끼도록 구조를 바꿨습니다.
 # ------------------------------------------------------------------
-def render_material_section(prefix, selected_comp, default_url, on_complete):
+def render_material_section(prefix, selected_comp, default_url):
     tab1, tab2 = st.tabs(["🚀 자동 크롤링 수집", "📁 예비 업로드"])
     sess_key = f"{prefix}_items_{selected_comp}"
     if sess_key not in st.session_state: st.session_state[sess_key] = []
@@ -755,9 +958,16 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
                         st.info(f"⚠️ [{selected_comp}] 활성 광고를 수집하지 못했습니다. [예비 업로드] 탭을 활용해 주세요.")
                         st.session_state[sess_key] = []
                     else:
+                        # [수정 - 3번] 전체 카드 수 대비 이미지로 수집된 건수, 영상이라 제외된 건수를 함께 안내
+                        video_count = debug_info.get("video_count", 0)
+                        card_count = debug_info.get("card_count", 0)
                         status_box.update(label=f"'{selected_comp}' 총 {len(ads)}건 수집 완료!", state="complete")
                         st.session_state[sess_key] = ads
-                        st.success(f"[{selected_comp}] 총 {len(ads)}건 수집 완료")
+                        msg = f"[{selected_comp}] 이미지 소재 {len(ads)}건 수집 완료"
+                        if video_count > 0:
+                            msg += f" · 동영상 소재 {video_count}건은 이미지가 아니라서 자동 제외됨"
+                        st.success(msg)
+                        st.caption(f"페이지에서 감지된 전체 광고 카드 {card_count}개 중 이미지 소재만 추출했습니다.")
 
     with tab2:
         uploaded_files = st.file_uploader("광고 이미지 업로드", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key=f"{prefix}_uploader_{selected_comp}")
@@ -779,21 +989,7 @@ def render_material_section(prefix, selected_comp, default_url, on_complete):
         if items_to_remove:
             st.session_state[sess_key] = [it for it in st.session_state[sess_key] if it['id'] not in items_to_remove]
             st.rerun()
-
-        st.divider()
-        if st.button(f"'{selected_comp}' 전체 브랜드 통합 분석 실행", type="primary", key=f"{prefix}_analyze_btn_{selected_comp}"):
-            if not st.session_state.get("current_api_key"):
-                st.error("상단에서 AI API Key를 입력해 주세요.")
-            else:
-                raw_bytes_list = [it["bytes"] for it in st.session_state[sess_key] if it.get("bytes")]
-                if not raw_bytes_list:
-                    st.warning("분석 가능한 이미지가 없습니다.")
-                else:
-                    try:
-                        report = run_brand_integrated_analysis(st.session_state['current_ai_provider'], st.session_state['current_api_key'], selected_comp, raw_bytes_list)
-                        on_complete({"brand_name": selected_comp, "count": len(st.session_state[sess_key]), "report": report})
-                    except Exception as e:
-                        st.error(f"분석 중 오류 발생: {e}")
+        st.info("✅ 이 소재는 세션에 저장되어 있어요. 다른 경쟁사도 이어서 수집한 뒤, **03 · 메시지 갭 분석** 탭에서 한 번에 통합 분석하시면 됩니다.")
 
 
 # ------------------------------------------------------------------
@@ -844,12 +1040,9 @@ if "work" not in st.session_state: st.session_state.work = {}
 if segment not in st.session_state.work:
     _persisted = load_work_state(segment)
     st.session_state.work[segment] = {
-        "own_analyses": load_own_analysis(segment),
         "insight": _persisted.get("insight", ""),
         "gap_analysis": _persisted.get("gap_analysis", ""),
         "ideas": _persisted.get("ideas", ""),
-        "last_comp_result": None,
-        "last_competitor": "",
     }
 W = st.session_state.work[segment]
 
@@ -865,7 +1058,7 @@ def _persist_work_state():
 # 01 · 경쟁사 소재 분석
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 선택하면 해당 브랜드의 메타 광고 라이브러리 URL이 자동으로 세팅됩니다. 여기서는 소재만 모으고, 실제 AI 분석은 03번 탭에서 한 번에 진행해요.")
 
     competitors = load_competitors()[segment]
     
@@ -898,147 +1091,114 @@ if nav == "01 · 경쟁사 소재 분석":
                     st.rerun()
 
     auto_url = META_URL_MAP.get(selected_competitor, "")
+    render_material_section("comp", selected_competitor, auto_url)
 
-    def _on_comp_complete(res):
-        W["last_comp_result"] = res
-        W["last_competitor"] = selected_competitor
-        save_profile_entry(segment, selected_competitor, {"timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"), "count": res["count"], "report": res["report"]})
-        st.success(f"'{selected_competitor}' 전체 브랜드 통합 분석 완료!")
-
-    render_material_section("comp", selected_competitor, auto_url, _on_comp_complete)
-
-    if W["last_comp_result"] and W["last_competitor"] == selected_competitor:
+    # 지금까지 세션에 수집해둔 경쟁사들 현황 요약
+    _comp_materials, _ = gather_collected_materials(segment)
+    if _comp_materials:
         st.divider()
-        st.markdown(f"### '{W['last_competitor']}' 브랜드 전체 크리에이티브 통합 분석 리포트")
-        render_integrated_scorecard(W["last_comp_result"]["report"])
+        summary = " · ".join([f"{name} {len(imgs)}건" for name, imgs in _comp_materials.items()])
+        st.caption(f"📦 지금까지 수집된 경쟁사 소재: {summary}")
 
 # ------------------------------------------------------------------
 # 02 · 자사 소재 분석
 # ------------------------------------------------------------------
 elif nav == "02 · 자사 소재 분석":
-    section_header("02", f"{segment} 자사 광고 소재 분석")
-
-    def _on_own_complete(res):
-        W["own_analyses"] = res
-        save_own_analysis(segment, res)  # [수정 - 5,6번] 세션이 아닌 파일에 영구 저장
-        st.success("자사 소재 분석 완료! (03 탭 메시지 갭 분석에서 계속 사용됩니다)")
-
-    render_material_section("own", f"자사({segment})", OWN_META_URL_MAP.get(segment, ""), _on_own_complete)
-
-    if W["own_analyses"]:
-        st.divider()
-        st.markdown("### 저장된 자사 브랜드 통합 분석 리포트")
-        render_integrated_scorecard(W["own_analyses"].get("report", {}))
+    section_header("02", f"{segment} 자사 광고 소재 분석", "여기서도 소재만 모아두세요. 실제 AI 분석은 03번 탭에서 경쟁사와 함께 한 번에 진행됩니다.")
+    render_material_section("own", f"자사({segment})", OWN_META_URL_MAP.get(segment, ""))
 
 # ------------------------------------------------------------------
 # 03 · 메시지 갭 분석
 # ------------------------------------------------------------------
 elif nav == "03 · 메시지 갭 분석":
-    section_header("03", f"{segment} 메시지 갭 분석 & 위닝 포인트")
-    
-    profiles = load_all_profiles().get(segment, {})
-    all_comp_entries = [(comp, e) for comp, es in profiles.items() for e in es]
+    section_header("03", f"{segment} 메시지 갭 분석 & 위닝 포인트",
+                   "경쟁사 여러 브랜드를 하나로, 자사 소재도 하나로 인식시켜 AI 호출 단 1번으로 통합 분석합니다.")
 
-    if not all_comp_entries:
-        st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해주세요.")
-    else:
-        if st.button("경쟁사 위닝 포인트 도출", type="primary", key="insight_btn"):
+    comp_materials, own_bytes = gather_collected_materials(segment)
+    comp_count = len(comp_materials)
+    comp_img_total = sum(len(v) for v in comp_materials.values())
+
+    status_cols = st.columns(2)
+    with status_cols[0]:
+        if comp_materials:
+            st.success(f"✅ 경쟁사 소재 준비됨: {comp_count}개 브랜드 · 이미지 총 {comp_img_total}건")
+        else:
+            st.warning("⚠️ 01 탭에서 경쟁사 소재를 먼저 수집해주세요.")
+    with status_cols[1]:
+        if own_bytes:
+            st.success(f"✅ 자사 소재 준비됨: 이미지 {len(own_bytes)}건")
+        else:
+            st.warning("⚠️ 02 탭에서 자사 소재를 먼저 수집해주세요. (없어도 경쟁사 트렌드만 볼 수 있어요)")
+
+    st.divider()
+
+    if not comp_materials and not own_bytes:
+        st.info("먼저 01·02 탭에서 소재를 수집해주세요.")
+    elif comp_materials and own_bytes:
+        if st.button("🔍 경쟁사 + 자사 통합 분석 실행 (AI 요청 1회)", type="primary", key="combined_gap_btn"):
             if not st.session_state.get("current_api_key"):
                 st.error("상단에서 API Key를 입력해 주세요.")
             else:
-                comp_summary = ""
-                for comp, e in all_comp_entries:
-                    rep = e.get("report", {})
-                    comp_summary += f"[{comp}]\n메시지장점: {rep.get('msg_good','')}\n아쉬운점: {rep.get('msg_bad','')}\n\n"
-
-                INSIGHT_PROMPT = """당신은 수석 브랜드 전략가입니다. 아래 경쟁사들의 최신 광고 분석 리포트를 검토하고,
-경쟁사들이 공통으로 활용하고 있는 성공 패턴(위닝 포인트)을 3가지 핵심 키워드로 요약하고, 시장의 트렌드 인사이트를 도출해주세요.
-
-[경쟁사 분석 모음]
-{comp_summary}
-
-작성 형식:
-### 핵심 위닝 포인트 3가지
-1. **[키워드]**: 설명...
-2. **[키워드]**: 설명...
-3. **[키워드]**: 설명...
-
-### 종합 마케팅 인사이트
-- 시장 내 공통적인 소구 트렌드 및 시사점
-"""
-                with st.spinner("인사이트 도출 중..."):
+                comp_flat = [b for imgs in comp_materials.values() for b in imgs]
+                with st.status("경쟁사+자사 통합 분석 진행 중...", expanded=True) as gap_status:
+                    def _update_gap_status(msg):
+                        gap_status.update(label=msg, state="running")
                     try:
-                        resp_text = run_unified_ai_prompt(
+                        resp_text = run_combined_gap_analysis(
                             st.session_state["current_ai_provider"],
                             st.session_state["current_api_key"],
-                            INSIGHT_PROMPT.format(comp_summary=comp_summary)
+                            comp_flat, own_bytes,
+                            list(comp_materials.keys()), f"자사({segment})",
+                            status_callback=_update_gap_status,
                         )
+                        gap_status.update(label="통합 분석 완료!", state="complete")
+                        W["gap_analysis"] = resp_text
+                        W["insight"] = ""  # 이제 인사이트도 통합 리포트 안에 포함되므로 별도 필드는 비워둠
+                        _persist_work_state()
+                    except QuotaExceededError as e:
+                        gap_status.update(label="무료 API 사용량 한도 초과", state="error")
+                        st.error(f"🚦 {e}")
+                        st.info(
+                            "💡 (1) 1분 정도 기다렸다가 다시 눌러보세요. "
+                            "(2) 계속 반복되면 Google AI Studio에서 결제(유료 티어) 전환을 고려해보세요. "
+                            "(3) 상단 'AI 엔진 선택'에서 ChatGPT/Claude로 잠시 바꿔서 시도해보세요."
+                        )
+                    except Exception as e:
+                        gap_status.update(label="분석 중 오류 발생", state="error")
+                        st.error(f"분석 중 오류 발생: {e}")
+    elif comp_materials and not own_bytes:
+        st.markdown("**자사 소재가 아직 없어요 — 우선 경쟁사 트렌드만 뽑아볼 수 있어요.**")
+        if st.button("경쟁사 트렌드만 분석 (AI 요청 1회)", key="comp_only_btn"):
+            if not st.session_state.get("current_api_key"):
+                st.error("상단에서 API Key를 입력해 주세요.")
+            else:
+                comp_flat = [b for imgs in comp_materials.values() for b in imgs]
+                with st.status("경쟁사 소재 트렌드 분석 진행 중...", expanded=True) as trend_status:
+                    def _update_trend_status(msg):
+                        trend_status.update(label=msg, state="running")
+                    try:
+                        resp_text = run_competitor_trend_only(
+                            st.session_state["current_ai_provider"], st.session_state["current_api_key"],
+                            comp_flat, list(comp_materials.keys()), status_callback=_update_trend_status,
+                        )
+                        trend_status.update(label="분석 완료!", state="complete")
                         W["insight"] = resp_text
-                        _persist_work_state()  # [수정 - 5,6번]
-                    except Exception as e: st.error(f"오류 발생: {e}")
+                        _persist_work_state()
+                    except QuotaExceededError as e:
+                        trend_status.update(label="무료 API 사용량 한도 초과", state="error")
+                        st.error(f"🚦 {e}")
+                    except Exception as e:
+                        trend_status.update(label="분석 중 오류 발생", state="error")
+                        st.error(f"분석 중 오류 발생: {e}")
 
-        if W["insight"]: st.markdown(W["insight"])
-
+    if W.get("gap_analysis"):
         st.divider()
-        st.markdown("**우리 소재와 비교해서 부족한 메시지 찾기**")
-
-        if not W["own_analyses"]:
-            st.info("02 탭(자사 소재 분석)에서 자사 소재 분석을 완료하면, 경쟁사 대비 부족한 메시지를 비교해드려요.")
-        else:
-            if st.button("메시지 갭 분석 실행", type="primary", key="gap_btn"):
-                if not st.session_state.get("current_api_key"):
-                    st.error("상단에서 API Key를 입력해 주세요.")
-                else:
-                    comp_summary = ""
-                    for comp, e in all_comp_entries:
-                        rep = e.get("report", {})
-                        comp_summary += f"[{comp}] 메시지: {rep.get('msg_good','')} / 비주얼: {rep.get('vis_good','')}\n"
-                    
-                    own_rep = W["own_analyses"].get("report", {})
-                    # [수정 - 5번] 메시지뿐 아니라 비주얼 강약점까지 포함해서 비교 정확도를 높임
-                    own_summary = (
-                        f"[자사] 메시지 장점: {own_rep.get('msg_good','')}\n"
-                        f"메시지 아쉬운점: {own_rep.get('msg_bad','')}\n"
-                        f"비주얼 장점: {own_rep.get('vis_good','')}\n"
-                        f"비주얼 아쉬운점: {own_rep.get('vis_bad','')}"
-                    )
-
-                    GAP_PROMPT = """당신은 브랜드 전략 컨설턴트입니다. 아래는 경쟁사 그룹과 자사 브랜드 분석 정보입니다.
-두 그룹을 비교해서 아래 내용을 정리해주세요.
-
-[경쟁사 그룹 요약 (메시지/비주얼)]
-{comp_summary}
-
-[자사 브랜드 요약 (메시지/비주얼)]
-{own_summary}
-
-작성 형식:
-### 경쟁사는 다루지만 우리 소재에는 부족한 메시지
-- ...
-
-### 보강하면 좋을 메시지 (우선순위 순, 이유 포함)
-1. ...
-2. ...
-3. ...
-
-### 비주얼/톤앤매너 측면에서 참고할 점
-- ...
-
-### 우리만 갖고 있는 강점 (계속 유지할 것)
-- ...
-"""
-                    with st.spinner("갭 분석 중..."):
-                        try:
-                            resp_text = run_unified_ai_prompt(
-                                st.session_state["current_ai_provider"],
-                                st.session_state["current_api_key"],
-                                GAP_PROMPT.format(comp_summary=comp_summary, own_summary=own_summary)
-                            )
-                            W["gap_analysis"] = resp_text
-                            _persist_work_state()  # [수정 - 5,6번]
-                        except Exception as e: st.error(f"오류 발생: {e}")
-
-            if W["gap_analysis"]: st.markdown(W["gap_analysis"])
+        st.markdown("### 📊 경쟁사 + 자사 통합 분석 리포트")
+        st.markdown(W["gap_analysis"])
+    elif W.get("insight"):
+        st.divider()
+        st.markdown("### 📊 경쟁사 트렌드 리포트")
+        st.markdown(W["insight"])
 
 # ------------------------------------------------------------------
 # 04 · 스토리보드 아이디어
@@ -1085,19 +1245,21 @@ elif nav == "04 · 스토리보드 아이디어":
 
     st.divider()
 
-    profiles = load_all_profiles().get(segment, {})
-    all_comp_entries = [(comp, e) for comp, es in profiles.items() for e in es]
+    comp_materials, own_bytes = gather_collected_materials(segment)
+    comp_img_total = sum(len(v) for v in comp_materials.values())
 
     if not brand_name or not brand_product:
         st.warning("위에서 '브랜드/제품명'과 '제품 설명'을 먼저 입력하고 저장해 주세요.")
-    elif not all_comp_entries:
-        st.info("먼저 01 탭에서 경쟁사 소재 분석을 완료해 주세요.")
+    elif not comp_materials:
+        st.info("먼저 01 탭에서 경쟁사 소재를 수집해 주세요.")
     else:
+        if not W.get("gap_analysis") and not W.get("insight"):
+            st.info("💡 03 탭에서 통합 분석을 먼저 실행하면 훨씬 더 정교한 스토리보드가 나와요. (지금도 생성은 가능합니다)")
         if st.button("위닝 스토리보드 아이디어 생성", type="primary"):
             if not st.session_state.get("current_api_key"):
                 st.error("상단에서 API Key를 입력해 주세요.")
             else:
-                gap_context = W["gap_analysis"] or "없음 (아직 메시지 갭 분석을 실행하지 않음)"
+                gap_context = W.get("gap_analysis") or W.get("insight") or "없음 (아직 03 탭에서 통합 분석을 실행하지 않음)"
 
                 STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
 그리고 자사 디자인 메모리를 반영하여 차별화된 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
@@ -1121,7 +1283,9 @@ elif nav == "04 · 스토리보드 아이디어":
 - **CTA (행동 유도 문구)**: 
 - **차별화 포인트**: 
 """
-                with st.spinner("스토리보드 기획안 작성 중..."):
+                with st.status("스토리보드 기획안 작성 중...", expanded=True) as story_status:
+                    def _update_story_status(msg):
+                        story_status.update(label=msg, state="running")
                     try:
                         resp_text = run_unified_ai_prompt(
                             st.session_state["current_ai_provider"],
@@ -1131,8 +1295,10 @@ elif nav == "04 · 스토리보드 아이디어":
                                 target_audience=target_audience,
                                 design_memory=brand_design_memory or "기본 톤앤매너",
                                 gap_context=gap_context
-                            )
+                            ),
+                            status_callback=_update_story_status,
                         )
+                        story_status.update(label="스토리보드 완성!", state="complete")
                         W["ideas"] = resp_text
                         _persist_work_state()  # [수정 - 5,6번]
 
@@ -1142,12 +1308,17 @@ elif nav == "04 · 스토리보드 아이디어":
                             "brand_name": brand_name,
                             "brand_product": brand_product,
                             "target_audience": target_audience,
-                            "material_count": len(all_comp_entries),
-                            "insight": W["insight"],
-                            "gap_analysis": W["gap_analysis"],
+                            "material_count": len(comp_materials) + (1 if own_bytes else 0),
+                            "insight": W.get("insight", ""),
+                            "gap_analysis": W.get("gap_analysis", ""),
                             "ideas": W["ideas"],
                         })
-                    except Exception as e: st.error(f"오류 발생: {e}")
+                    except QuotaExceededError as e:
+                        story_status.update(label="무료 API 사용량 한도 초과", state="error")
+                        st.error(f"🚦 {e}")
+                    except Exception as e:
+                        story_status.update(label="오류 발생", state="error")
+                        st.error(f"오류 발생: {e}")
 
         if W["ideas"]:
             st.markdown(W["ideas"])
