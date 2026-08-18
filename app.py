@@ -159,6 +159,29 @@ li[aria-selected="true"] {
 .align-bottom-btn { margin-top: 28px; }
 
 /* ------------------------------------------------------------------
+   [추가 CSS] 멀티셀렉트 선택 태그(칩)가 어두운 배경 + 검정 글자로 나와
+   가독성이 떨어지는 문제 수정. primary-soft 배경 + primary 글자로
+   확실한 대비를 강제 적용합니다.
+------------------------------------------------------------------ */
+div[data-baseweb="tag"],
+span[data-baseweb="tag"],
+[data-baseweb="tag"] {
+    background-color: var(--primary-soft) !important;
+    border: 1px solid var(--primary) !important;
+}
+div[data-baseweb="tag"] *,
+span[data-baseweb="tag"] *,
+[data-baseweb="tag"] * {
+    background-color: transparent !important;
+    color: var(--primary) !important;
+    fill: var(--primary) !important;
+}
+div[data-baseweb="tag"] svg,
+span[data-baseweb="tag"] svg {
+    fill: var(--primary) !important;
+}
+
+/* ------------------------------------------------------------------
    [추가 CSS - 2번] 다크모드에서 새는 요소 추가 보강
    config.toml에서 라이트 테마를 강제하지만, 팝업/파일업로더 등
    일부 컴포넌트는 브라우저 렌더링 타이밍에 따라 새는 경우가 있어 이중 방어.
@@ -1200,29 +1223,60 @@ def _persist_work_state():
 # 01 · 경쟁사 소재 분석
 # ------------------------------------------------------------------
 if nav == "01 · 경쟁사 소재 분석":
-    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "여러 경쟁사 소재를 모아두면, 03번 탭에서 전체를 하나로 인식해 통합 분석합니다. 여기서는 소재만 모아요.")
+    section_header("01", f"{segment} 경쟁사 광고 소재 분석", "경쟁사를 하나 또는 여러 개 선택하세요. 선택한 만큼만 아래에 수집창이 나타납니다.")
 
     competitors = load_competitors()[segment]
 
-    # [추가] 수집 현황 체크리스트 - 지금까지 어떤 경쟁사가 몇 건 모였는지 한눈에 표시
-    checklist = []
-    for c in competitors:
-        n = len(st.session_state.get(f"comp_items_{c}", []))
-        checklist.append(f"{'✅' if n > 0 else '⬜'} {c}" + (f" ({n}건)" if n > 0 else ""))
-    st.markdown(f"<div class='sidebar-caption' style='margin-left:0;'>수집 현황</div><div style='font-size:13px; margin-bottom:12px;'>{' &nbsp;·&nbsp; '.join(checklist)}</div>", unsafe_allow_html=True)
+    add_col1, add_col2 = st.columns([4, 1.2])
+    with add_col2:
+        with st.popover("+ 새 경쟁사 추가", use_container_width=True):
+            st.markdown("##### 새 경쟁사 추가")
+            new_comp = st.text_input("경쟁사명 입력", key=f"{segment}_new_comp_input")
+            if st.button("추가 완료", key=f"{segment}_new_comp_btn", type="primary", use_container_width=True):
+                if new_comp.strip():
+                    add_competitor(segment, new_comp.strip())
+                    st.success(f"'{new_comp.strip()}' 추가 완료!")
+                    time.sleep(0.5)
+                    st.rerun()
 
-    # [추가] 여러 경쟁사 한 번에 자동 수집
-    with st.expander("🚀 여러 경쟁사 한 번에 자동 수집 (추천)", expanded=not any(len(st.session_state.get(f"comp_items_{c}", [])) > 0 for c in competitors)):
-        bulk_selected = st.multiselect("수집할 경쟁사를 모두 선택하세요", competitors, key=f"{segment}_bulk_select")
-        if st.button("선택한 경쟁사 전체 자동 수집 실행", type="primary", key=f"{segment}_bulk_crawl_btn"):
-            if not bulk_selected:
-                st.warning("최소 1개 이상의 경쟁사를 선택해주세요.")
-            else:
-                with st.status(f"{len(bulk_selected)}개 경쟁사 순차 수집 중...", expanded=True) as bulk_status:
-                    for c in bulk_selected:
+    default_list = DEFAULT_COMPETITORS.get(segment, [])
+    custom_added = [c for c in competitors if c not in default_list]
+    if custom_added:
+        st.markdown("<div style='font-size: 12px; color: #555866; margin-bottom: 8px;'>📌 내가 추가한 경쟁사 (❌를 누르면 바로 삭제됩니다)</div>", unsafe_allow_html=True)
+        del_cols = st.columns(min(len(custom_added), 4))
+        for c_idx, c_name in enumerate(custom_added):
+            with del_cols[c_idx % len(del_cols)]:
+                if st.button(f"{c_name} ❌", key=f"quick_del_{segment}_{c_name}", use_container_width=True):
+                    remove_competitor(segment, c_name)
+                    st.success(f"'{c_name}' 삭제 완료!")
+                    time.sleep(0.3)
+                    st.rerun()
+
+    # [수정] 선택 위젯을 멀티셀렉트 하나로 통일 - 1개만 고르면 1개만, 여러 개 고르면 여러 개가
+    # 그대로 아래에 나타나도록 해서 '개별/일괄' 이중 구조로 인한 중복감을 없앴습니다.
+    with add_col1:
+        default_sel = st.session_state.get(f"{segment}_selected_competitors")
+        if default_sel is None:
+            default_sel = [competitors[0]] if competitors else []
+        selected_list = st.multiselect(
+            "분석할 경쟁사 선택 (여러 개 선택 가능)", competitors,
+            default=[c for c in default_sel if c in competitors],
+            key=f"{segment}_selected_competitors",
+        )
+
+    if not competitors:
+        st.info("등록된 경쟁사가 없습니다. 위 '+ 새 경쟁사 추가'로 먼저 추가해주세요.")
+    elif not selected_list:
+        st.info("경쟁사를 1개 이상 선택해주세요.")
+    else:
+        # 2개 이상 선택했을 때만 '한 번에 자동 수집' 버튼 노출 (1개면 아래 개별 수집으로 충분)
+        if len(selected_list) > 1:
+            if st.button(f"🚀 선택한 {len(selected_list)}개 경쟁사 전체 자동 수집 실행", type="primary", key=f"{segment}_bulk_crawl_btn"):
+                with st.status(f"{len(selected_list)}개 경쟁사 순차 수집 중...", expanded=True) as bulk_status:
+                    for c in selected_list:
                         url = META_URL_MAP.get(c, "")
                         if not url:
-                            st.warning(f"'{c}'는 등록된 메타 URL이 없어 건너뜁니다. (아래 개별 수집 탭 → 예비 업로드로 추가해주세요)")
+                            st.warning(f"'{c}'는 등록된 메타 URL이 없어 건너뜁니다. (아래 개별 칸의 '예비 업로드' 탭으로 직접 추가해주세요)")
                             continue
                         def _bulk_cb(msg, _c=c):
                             bulk_status.update(label=f"[{_c}] {msg}")
@@ -1239,50 +1293,22 @@ if nav == "01 · 경쟁사 소재 분석":
                             msg = f"✅ '{c}' 이미지 소재 {len(ads)}건 수집 완료"
                             if vcount: msg += f" (동영상 {vcount}건 제외)"
                             st.success(msg)
-                    bulk_status.update(label="전체 일괄 수집 완료!", state="complete")
-                time.sleep(0.8)
-                st.rerun()
+                    bulk_status.update(label="전체 일괄 수집 완료! 아래에서 각 브랜드별 이미지를 확인하세요.", state="complete")
+            st.divider()
 
-    st.divider()
-    st.markdown("**개별 수집 / URL 직접 확인이 필요할 때**")
-
-    comp_col, add_col = st.columns([4, 1.2])
-    with comp_col:
-        selected_competitor = st.selectbox("경쟁사 선택", competitors, key=f"{segment}_comp_select")
-    with add_col:
-        st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
-        with st.popover("+ 새 경쟁사 추가", use_container_width=True):
-            st.markdown("##### 새 경쟁사 추가")
-            new_comp = st.text_input("경쟁사명 입력", key=f"{segment}_new_comp_input")
-            if st.button("추가 완료", key=f"{segment}_new_comp_btn", type="primary", use_container_width=True):
-                if new_comp.strip():
-                    add_competitor(segment, new_comp.strip())
-                    st.success(f"'{new_comp.strip()}' 추가 완료!")
-                    time.sleep(0.5)
-                    st.rerun()
-
-    default_list = DEFAULT_COMPETITORS.get(segment, [])
-    custom_added = [c for c in competitors if c not in default_list]
-    if custom_added:
-        st.markdown("<div style='font-size: 12px; color: #555866; margin-top: 6px; margin-bottom: 8px;'>📌 내가 추가한 경쟁사 (❌를 누르면 바로 삭제됩니다)</div>", unsafe_allow_html=True)
-        del_cols = st.columns(min(len(custom_added), 4))
-        for c_idx, c_name in enumerate(custom_added):
-            with del_cols[c_idx % len(del_cols)]:
-                if st.button(f"{c_name} ❌", key=f"quick_del_{segment}_{c_name}", use_container_width=True):
-                    remove_competitor(segment, c_name)
-                    st.success(f"'{c_name}' 삭제 완료!")
-                    time.sleep(0.3)
-                    st.rerun()
-
-    auto_url = META_URL_MAP.get(selected_competitor, "")
-    render_material_section("comp", selected_competitor, auto_url)
+        # [수정] 선택된 경쟁사 수만큼 수집창을 그대로 반복 표시 → 일괄수집 직후에도
+        # 모든 브랜드의 이미지가 바로 아래에 보여서 '수집됐는지 안됐는지' 헷갈리지 않습니다.
+        for c in selected_list:
+            st.markdown(f"#### 🏷️ {c}")
+            auto_url = META_URL_MAP.get(c, "")
+            render_material_section("comp", c, auto_url)
+            st.divider()
 
     # 지금까지 세션에 수집해둔 경쟁사들 현황 요약
     _comp_materials, _ = gather_collected_materials(segment)
     if _comp_materials:
-        st.divider()
         summary = " · ".join([f"{name} {len(imgs)}건" for name, imgs in _comp_materials.items()])
-        st.caption(f"📦 지금까지 수집된 경쟁사 소재: {summary}")
+        st.caption(f"📦 지금까지 수집된 경쟁사 소재 (전체): {summary}")
 
 # ------------------------------------------------------------------
 # 02 · 자사 소재 분석
