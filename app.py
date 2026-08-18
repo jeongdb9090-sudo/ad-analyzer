@@ -132,7 +132,7 @@ div[data-baseweb="tag"],
 div[data-baseweb="select"] {
     background-color: #FFFFFF !important;
     background: #FFFFFF !important;
-    color: var(--ink) !important;
+    color: #191B29 !important;
     border-color: var(--border) !important;
 }
 
@@ -140,7 +140,7 @@ div[data-baseweb="select"] span,
 div[data-baseweb="select"] div,
 [data-baseweb="select"] * {
     background-color: transparent !important;
-    color: var(--ink) !important;
+    color: #191B29 !important;
 }
 
 div[data-baseweb="popover"] ul,
@@ -148,12 +148,12 @@ div[data-baseweb="popover"] li,
 div[role="listbox"],
 li[role="option"] {
     background-color: #FFFFFF !important;
-    color: var(--ink) !important;
+    color: #191B29 !important;
 }
 li[role="option"]:hover,
 li[aria-selected="true"] {
     background-color: var(--primary-soft) !important;
-    color: var(--ink) !important;
+    color: #FFFFFF !important;
 }
 
 .align-bottom-btn { margin-top: 28px; }
@@ -168,6 +168,7 @@ span[data-baseweb="tag"],
 [data-baseweb="tag"] {
     background-color: var(--primary-soft) !important;
     border: 1px solid var(--primary) !important;
+    color: var(--primary) !important; /* 칩 안의 글씨 색상 */
 }
 div[data-baseweb="tag"] *,
 span[data-baseweb="tag"] *,
