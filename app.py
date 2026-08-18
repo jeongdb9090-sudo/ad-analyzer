@@ -67,8 +67,8 @@ st.markdown("""
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap');
 
 :root {
-    --ink: #191B29;
-    --muted: #555866;
+    --ink: #FFFFFF; /* <- 글씨를 흰색으로 변경합니다. (또는 아주 밝은 회색) */
+    --muted: #DDDDDD; /* 뮤트된 텍스트도 밝게 조정 */
     --paper: #FAF9F5;
     --surface: #FFFFFF;
     --border: #E2E1D9;
@@ -121,6 +121,7 @@ h1, h2, h3, h4, h5, h6 {
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
 
 div[data-baseweb="select"] > div,
+div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
 [data-testid="stTextInput"] input,
 [data-testid="stTextArea"] textarea,
@@ -132,7 +133,7 @@ div[data-baseweb="tag"],
 div[data-baseweb="select"] {
     background-color: #FFFFFF !important;
     background: #FFFFFF !important;
-    color: #FFFFFF !important;
+    color: #111111 !important; /* <- 어두운 글씨색으로 강제 지정합니다. */
     border-color: var(--border) !important;
 }
 
@@ -140,7 +141,8 @@ div[data-baseweb="select"] span,
 div[data-baseweb="select"] div,
 [data-baseweb="select"] * {
     background-color: transparent !important;
-    color: #FFFFFF !important;
+    /* 여기서는 color를 명시하지 않거나 상속되도록 두는 것이 상속 문제를 줄일 수 있습니다. */
+    /* 만약 필요하다면 color: #111111 !important; 처럼 어둡게 줍니다. */
 }
 
 div[data-baseweb="popover"] ul,
@@ -148,12 +150,12 @@ div[data-baseweb="popover"] li,
 div[role="listbox"],
 li[role="option"] {
     background-color: #FFFFFF !important;
-    color: var(--ink) !important;
+    color: #111111 !important; /* <- 옵션 목록 내부 글씨를 어둡게 강제합니다. */
 }
 li[role="option"]:hover,
 li[aria-selected="true"] {
-    background-color: var(--primary-soft) !important;
-    color: #FFFFFF !important;
+    background-color: var(--primary) !important; /* <- 선택된 배경을 진하게 바꿉니다. */
+    color: #FFFFFF !important;                 /* <- 선택된 상태의 글씨는 무조건 흰색으로 고정합니다. */
 }
 
 .align-bottom-btn { margin-top: 28px; }
