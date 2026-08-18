@@ -180,6 +180,18 @@ div[data-baseweb="tag"] svg,
 span[data-baseweb="tag"] svg {
     fill: var(--primary) !important;
 }
+/* [추가] Streamlit 버전에 따라 baseweb 속성명이 달라질 수 있어, testid 기준으로 한 번 더 강제 적용 */
+[data-testid="stMultiSelect"] * {
+    color: var(--primary) !important;
+    fill: var(--primary) !important;
+}
+[data-testid="stMultiSelect"] [data-baseweb="tag"],
+[data-testid="stMultiSelect"] span[role="button"],
+[data-testid="stMultiSelect"] div[role="button"] {
+    background-color: var(--primary-soft) !important;
+    border: 1px solid var(--primary) !important;
+    border-radius: 6px !important;
+}
 
 /* ------------------------------------------------------------------
    [추가 CSS - 2번] 다크모드에서 새는 요소 추가 보강
@@ -1103,7 +1115,7 @@ def render_material_section(prefix, selected_comp, default_url):
 
     with tab1:
         meta_url = st.text_input("메타 광고 라이브러리 페이지 URL", value=default_url, key=f"{prefix}_meta_url_input_{selected_comp}")
-        if st.button("🚀 전체 라이브 소재 자동 수집 실행", key=f"{prefix}_crawl_btn", type="primary"):
+        if st.button("🚀 전체 라이브 소재 자동 수집 실행", key=f"{prefix}_crawl_btn_{selected_comp}", type="primary"):
             if not meta_url.strip():
                 st.warning("메타 라이브러리 URL을 입력해주세요.")
             else:
@@ -1228,7 +1240,18 @@ if nav == "01 · 경쟁사 소재 분석":
     competitors = load_competitors()[segment]
 
     add_col1, add_col2 = st.columns([4, 1.2])
+    # [수정 - 3번] 멀티셀렉트는 라벨(제목 텍스트)이 있고 팝오버 버튼은 없어서 줄이 안 맞았던 문제 수정
+    with add_col1:
+        default_sel = st.session_state.get(f"{segment}_selected_competitors")
+        if default_sel is None:
+            default_sel = [competitors[0]] if competitors else []
+        selected_list = st.multiselect(
+            "분석할 경쟁사 선택 (여러 개 선택 가능)", competitors,
+            default=[c for c in default_sel if c in competitors],
+            key=f"{segment}_selected_competitors",
+        )
     with add_col2:
+        st.markdown('<div class="align-bottom-btn"></div>', unsafe_allow_html=True)
         with st.popover("+ 새 경쟁사 추가", use_container_width=True):
             st.markdown("##### 새 경쟁사 추가")
             new_comp = st.text_input("경쟁사명 입력", key=f"{segment}_new_comp_input")
@@ -1251,18 +1274,6 @@ if nav == "01 · 경쟁사 소재 분석":
                     st.success(f"'{c_name}' 삭제 완료!")
                     time.sleep(0.3)
                     st.rerun()
-
-    # [수정] 선택 위젯을 멀티셀렉트 하나로 통일 - 1개만 고르면 1개만, 여러 개 고르면 여러 개가
-    # 그대로 아래에 나타나도록 해서 '개별/일괄' 이중 구조로 인한 중복감을 없앴습니다.
-    with add_col1:
-        default_sel = st.session_state.get(f"{segment}_selected_competitors")
-        if default_sel is None:
-            default_sel = [competitors[0]] if competitors else []
-        selected_list = st.multiselect(
-            "분석할 경쟁사 선택 (여러 개 선택 가능)", competitors,
-            default=[c for c in default_sel if c in competitors],
-            key=f"{segment}_selected_competitors",
-        )
 
     if not competitors:
         st.info("등록된 경쟁사가 없습니다. 위 '+ 새 경쟁사 추가'로 먼저 추가해주세요.")
