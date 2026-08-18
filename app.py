@@ -319,7 +319,7 @@ DEFAULT_SELECTORS = {
     ],
     "image_domain_keywords": ["scontent", "fbcdn"],
     "image_min_width": 150,
-    "max_scroll_count": 8,
+    "max_scroll_count": 15,
     "scroll_wait_ms": 2000,
     "initial_wait_timeout_ms": 15000,
 }
@@ -1086,7 +1086,7 @@ def render_export_buttons(segment, brand_info, insight_text, gap_text, ideas_tex
 # 실제 AI 분석(경쟁사 통합 + 자사 통합 + 갭 비교)은 03번 탭에서 단 1회의 API 호출로 처리해서
 # 무료 API 요금제의 분당 요청 한도를 아끼도록 구조를 바꿨습니다.
 # ------------------------------------------------------------------
-def render_material_section(prefix, selected_comp, default_url):
+def render_material_section(prefix, selected_comp, default_url, max_items=30):
     tab1, tab2 = st.tabs(["🚀 자동 크롤링 수집", "📁 예비 업로드"])
     sess_key = f"{prefix}_items_{selected_comp}"
     if sess_key not in st.session_state: st.session_state[sess_key] = []
@@ -1102,7 +1102,7 @@ def render_material_section(prefix, selected_comp, default_url):
                         status_box.update(label=msg, state="running")
 
                     ads, debug_info, err = scrape_meta_ads_with_playwright(
-                        meta_url.strip(), max_items=12, selectors=load_selectors(), status_callback=update_status
+                        meta_url.strip(), max_items=max_items, selectors=load_selectors(), status_callback=update_status
                     )
 
                     if err:
@@ -1217,6 +1217,13 @@ if nav == "01 · 경쟁사 소재 분석":
 
     competitors = load_competitors()[segment]
 
+    # [추가] 브랜드당 최대 수집 개수 - 기존엔 12건으로 고정되어 있어서 실제 운영 소재가
+    # 더 많아도 못 가져왔습니다. 이제 직접 조절할 수 있습니다.
+    max_items_setting = st.slider(
+        "브랜드당 최대 수집 개수", min_value=6, max_value=60, value=30, step=6,
+        key=f"{segment}_max_items", help="너무 크게 잡으면 페이지 스크롤/이미지 다운로드 시간이 늘어납니다.",
+    )
+
     add_col1, add_col2 = st.columns([4, 1.2])
     # [수정 - 3번] 멀티셀렉트는 라벨(제목 텍스트)이 있고 팝오버 버튼은 없어서 줄이 안 맞았던 문제 수정
     with add_col1:
@@ -1270,7 +1277,7 @@ if nav == "01 · 경쟁사 소재 분석":
                         def _bulk_cb(msg, _c=c):
                             bulk_status.update(label=f"[{_c}] {msg}")
                         ads, debug_info, err = scrape_meta_ads_with_playwright(
-                            url, max_items=12, selectors=load_selectors(), status_callback=_bulk_cb
+                            url, max_items=max_items_setting, selectors=load_selectors(), status_callback=_bulk_cb
                         )
                         if err:
                             st.error(f"❌ '{c}' 수집 실패: {err}")
@@ -1290,7 +1297,7 @@ if nav == "01 · 경쟁사 소재 분석":
         for c in selected_list:
             st.markdown(f"#### 🏷️ {c}")
             auto_url = META_URL_MAP.get(c, "")
-            render_material_section("comp", c, auto_url)
+            render_material_section("comp", c, auto_url, max_items=max_items_setting)
             st.divider()
 
     # 지금까지 세션에 수집해둔 경쟁사들 현황 요약
