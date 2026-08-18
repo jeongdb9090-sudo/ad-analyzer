@@ -78,9 +78,15 @@ st.markdown("""
     --teal: #0D9488;
 }
 
-html, body, [class*="css"], .stMarkdown, p, span, label, div {
+html, body, [class*="css"], .stMarkdown, p, label {
     font-family: 'Inter', sans-serif;
     color: var(--ink) !important;
+}
+/* [수정] span, div는 전역 강제 대상에서 제외했습니다. 태그 칩(멀티셀렉트 선택값)처럼
+   색깔 있는 배경 위에 흰 글자가 필요한 요소들이 계속 이 규칙에 깔려서 안 보였기 때문입니다.
+   대신 폰트만 통일 적용하고, 색상은 각 요소 상황에 맞게 아래에서 개별 지정합니다. */
+html, body, [class*="css"], .stMarkdown, span, div {
+    font-family: 'Inter', sans-serif;
 }
 
 .stApp { background-color: #FAF9F5 !important; }
@@ -159,24 +165,11 @@ li[aria-selected="true"] {
 .align-bottom-btn { margin-top: 28px; }
 
 /* ------------------------------------------------------------------
-   [추가 CSS] 멀티셀렉트 선택 태그(칩) - 남색 배경은 그대로 두고, 글자/아이콘 색만
-   흰색으로 강제. Streamlit 내부 스타일보다 확실히 이기도록 'html body' 접두사로
-   특이도(specificity)를 크게 높여서 적용합니다.
+   [추가 CSS] 멀티셀렉트 선택 태그(칩) 글자를 흰색으로. 이제 위쪽의 전역 span 강제
+   규칙을 제거했기 때문에, 이 규칙이 더 이상 다른 규칙에 덮이지 않고 정상 적용됩니다.
 ------------------------------------------------------------------ */
-html body [data-testid="stMultiSelect"] span[data-baseweb="tag"],
-html body [data-testid="stMultiSelect"] div[data-baseweb="tag"] {
+html body [data-testid="stMultiSelect"] span {
     color: #FFFFFF !important;
-}
-html body [data-testid="stMultiSelect"] span[data-baseweb="tag"] *,
-html body [data-testid="stMultiSelect"] div[data-baseweb="tag"] * {
-    color: #FFFFFF !important;
-    fill: #FFFFFF !important;
-    stroke: #FFFFFF !important;
-}
-html body [data-testid="stMultiSelect"] span[data-baseweb="tag"] svg,
-html body [data-testid="stMultiSelect"] div[data-baseweb="tag"] svg {
-    fill: #FFFFFF !important;
-    opacity: 1 !important;
 }
 
 /* ------------------------------------------------------------------
