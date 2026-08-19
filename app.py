@@ -1164,7 +1164,7 @@ def render_material_section(prefix, selected_comp, default_url, max_items=30):
 # ------------------------------------------------------------------
 top_col1, top_col2, top_col3 = st.columns([2.5, 1.2, 1.5])
 with top_col1:
-    st.markdown('<div class="appbar"><div class="appbar-mark"></div><div><div class="appbar-title">경쟁사 광고 소재 분석</div></div></div>', unsafe_allow_html=True)
+    st.markdown('<div class="appbar"><div class="appbar-emoji">🍀</div><div><div class="appbar-title">경쟁사 광고 소재 분석</div></div></div>', unsafe_allow_html=True)
 
 with top_col2:
     ai_provider = st.selectbox("AI 엔진 선택", ["Gemini (Google)", "ChatGPT (OpenAI)", "Claude (Anthropic)"], key="selected_ai_provider")
