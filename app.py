@@ -1165,7 +1165,7 @@ def render_material_section(prefix, selected_comp, default_url, max_items=30):
 # ------------------------------------------------------------------
 # [설정] 여기에 이미지 링크(URL)를 넣으면 자동으로 로고 이미지가 뜹니다.
 # 비워두면(따옴표 안이 빈 문자열이면) 아래 APPBAR_EMOJI가 대신 표시됩니다.
-APPBAR_LOGO_URL = ""  # 예: "https://raw.githubusercontent.com/내계정/내저장소/main/logo.png"
+APPBAR_LOGO_URL = "https://raw.githubusercontent.com/jeongdb9090-sudo/ad-analyzer/main/images.jpg"
 APPBAR_EMOJI = "🎯"
 
 top_col1, top_col2, top_col3 = st.columns([2.5, 1.2, 1.5])
