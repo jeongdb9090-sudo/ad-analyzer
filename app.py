@@ -6,7 +6,18 @@ import re
 import time
 import subprocess
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse, parse_qs
+
+# [추가] 히스토리 저장 시각이 서버 시간(대부분 UTC)이 아닌 한국시간(KST) 기준으로 기록되도록.
+# 일부 서버 환경엔 IANA 시간대 데이터(tzdata)가 없을 수 있어, 실패 시 UTC+9 고정 오프셋으로 대체합니다.
+try:
+    KST = ZoneInfo("Asia/Seoul")
+except Exception:
+    from datetime import timezone, timedelta
+    KST = timezone(timedelta(hours=9))
+def now_kst():
+    return datetime.now(KST)
 
 # 필수 패키지 자동 설치 보장 함수 (맨 처음에 실행)
 def ensure_package(package_name, import_name=None):
@@ -28,6 +39,7 @@ ensure_package("openai")
 ensure_package("anthropic")
 ensure_package("playwright")
 # --- [추가] 히스토리 영구 저장을 위한 구글시트 연동 패키지 (선택 사항, 미설정 시 자동 미사용) ---
+ensure_package("tzdata")
 ensure_package("gspread")
 ensure_package("google-auth", "google.oauth2")
 # --- [추가] 리포트를 워드/PDF 문서로 내보내기 위한 패키지 ---
@@ -993,7 +1005,7 @@ def build_report_docx(segment, brand_info, insight_text, gap_text, ideas_text):
     from docx import Document
     doc = Document()
     doc.add_heading(f"{segment} 경쟁사 광고 소재 분석 리포트", level=1)
-    doc.add_paragraph(f"생성일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    doc.add_paragraph(f"생성일시: {now_kst().strftime('%Y-%m-%d %H:%M')}")
 
     if brand_info and any(brand_info.values()):
         doc.add_heading("브랜드 정보", level=2)
@@ -1031,7 +1043,7 @@ def build_report_pdf(segment, brand_info, insight_text, gap_text, ideas_text):
 
     pdf.multi_cell(0, 10, f"{segment} 경쟁사 광고 소재 분석 리포트")
     pdf.set_font_size(10)
-    pdf.multi_cell(0, 6, f"생성일시: {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    pdf.multi_cell(0, 6, f"생성일시: {now_kst().strftime('%Y-%m-%d %H:%M')}")
     pdf.ln(4)
 
     def _section(title, body):
@@ -1515,12 +1527,13 @@ elif nav == "04 · 스토리보드 아이디어":
                         _persist_work_state()
 
                         save_history_entry({
-                            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "timestamp": now_kst().strftime("%Y-%m-%d %H:%M"),
                             "segment": segment,
                             "brand_name": brand_name,
                             "brand_product": effective_product,
                             "target_audience": target_audience,
                             "material_count": len(comp_materials) + (1 if own_bytes else 0),
+                            "competitor_names": list(comp_materials.keys()),  # [추가] 어떤 경쟁사를 분석했는지 기록
                             "insight": W.get("insight", ""),
                             "gap_analysis": W.get("gap_analysis", ""),
                             "ideas": W["ideas"],
@@ -1571,7 +1584,15 @@ elif nav == "05 · 히스토리":
         for i, entry in enumerate(filtered):
             title = f"[{entry.get('segment', '-')}] {entry.get('brand_name', '(브랜드명 없음)')} · {entry.get('timestamp', '')}"
             with st.expander(title):
-                st.markdown(f'<div class="history-meta">분석 경쟁사 {entry.get("material_count", 0)}개 · 타겟: {entry.get("target_audience", "-")}</div>', unsafe_allow_html=True)
+                comp_names = entry.get("competitor_names", [])
+                own_included = entry.get("material_count", 0) > len(comp_names)
+                comp_names_str = ", ".join(comp_names) if comp_names else "기록 없음"
+                st.markdown(
+                    f'<div class="history-meta">분석 경쟁사 {len(comp_names)}개 '
+                    f'({comp_names_str}){" · 자사 소재 포함" if own_included else ""} '
+                    f'· 타겟: {entry.get("target_audience", "-")}</div>',
+                    unsafe_allow_html=True,
+                )
                 st.divider()
                 if entry.get("insight"):
                     st.markdown("**위닝 포인트 요약**")
