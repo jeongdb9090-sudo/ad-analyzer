@@ -111,6 +111,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .appbar { display: flex; align-items: center; gap: 14px; padding: 18px 4px 20px 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
 .appbar-mark { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, var(--primary), var(--teal)); flex-shrink: 0; }
+.appbar-emoji { width: 34px; height: 34px; border-radius: 10px; background: var(--primary-soft); flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 19px; line-height: 1; }
 .appbar-title { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.1; color: var(--ink) !important; }
 
 .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; color: var(--primary) !important; background: var(--primary-soft); display: inline-block; padding: 3px 9px; border-radius: 4px; margin-bottom: 8px; font-weight: 600; }
@@ -1162,9 +1163,18 @@ def render_material_section(prefix, selected_comp, default_url, max_items=30):
 # ------------------------------------------------------------------
 # 상단 헤더 & 멀티 AI 엔진 선택 영역
 # ------------------------------------------------------------------
+# [설정] 여기에 이미지 링크(URL)를 넣으면 자동으로 로고 이미지가 뜹니다.
+# 비워두면(따옴표 안이 빈 문자열이면) 아래 APPBAR_EMOJI가 대신 표시됩니다.
+APPBAR_LOGO_URL = ""  # 예: "https://raw.githubusercontent.com/내계정/내저장소/main/logo.png"
+APPBAR_EMOJI = "🎯"
+
 top_col1, top_col2, top_col3 = st.columns([2.5, 1.2, 1.5])
 with top_col1:
-    st.markdown('<div class="appbar"><div class="appbar-emoji">🍀</div><div><div class="appbar-title">경쟁사 광고 소재 분석</div></div></div>', unsafe_allow_html=True)
+    if APPBAR_LOGO_URL.strip():
+        _mark_html = f'<img src="{APPBAR_LOGO_URL}" style="width:34px;height:34px;border-radius:8px;object-fit:cover;flex-shrink:0;" />'
+    else:
+        _mark_html = f'<div class="appbar-emoji">{APPBAR_EMOJI}</div>'
+    st.markdown(f'<div class="appbar">{_mark_html}<div><div class="appbar-title">경쟁사 광고 소재 분석</div></div></div>', unsafe_allow_html=True)
 
 with top_col2:
     ai_provider = st.selectbox("AI 엔진 선택", ["Gemini (Google)", "ChatGPT (OpenAI)", "Claude (Anthropic)"], key="selected_ai_provider")
