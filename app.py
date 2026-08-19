@@ -1176,6 +1176,11 @@ st.divider()
 # ------------------------------------------------------------------
 NAV_ITEMS = ["🏆 01 · 경쟁사 소재 분석", "🏠 02 · 자사 소재 분석", "🔍 03 · 메시지 갭 분석", "🎬 04 · 스토리보드 아이디어", "🗂️ 05 · 히스토리"]
 
+# [수정] '다른 탭으로 이동' 버튼은 위젯이 이미 그려진 뒤 nav_selector 값을 직접 바꾸면
+# StreamlitAPIException이 나기 때문에, 위젯을 만들기 '전'에 대기 중인 이동 요청을 먼저 반영합니다.
+if "_pending_nav" in st.session_state:
+    st.session_state["nav_selector"] = st.session_state.pop("_pending_nav")
+
 with st.sidebar:
     st.markdown('<div class="sidebar-caption">SEGMENT</div>', unsafe_allow_html=True)
     segment = st.radio("사업 구분", SEGMENTS, label_visibility="collapsed", key="segment_selector", horizontal=True)
@@ -1403,7 +1408,7 @@ elif nav == "03 · 메시지 갭 분석":
         st.markdown(W["gap_analysis"])
         st.divider()
         if st.button("📝 이 결과로 신규 소재 아이디어 만들기 →", type="primary", key="jump_to_04"):
-            st.session_state["nav_selector"] = "🎬 04 · 스토리보드 아이디어"
+            st.session_state["_pending_nav"] = "🎬 04 · 스토리보드 아이디어"
             st.rerun()
     elif W.get("insight"):
         st.divider()
