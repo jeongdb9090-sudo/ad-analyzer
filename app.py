@@ -88,10 +88,6 @@ st.markdown("""
     --primary-soft: #EEEFF7;
     --amber: #D97706;
     --teal: #0D9488;
-    /* [추가 - Purity UI 스타일] 카드용 부드러운 그림자 & 더 둥근 모서리 */
-    --shadow-sm: 0 1px 3px rgba(25, 27, 41, 0.06), 0 1px 2px rgba(25, 27, 41, 0.04);
-    --shadow-md: 0 8px 24px rgba(25, 27, 41, 0.08), 0 2px 6px rgba(25, 27, 41, 0.05);
-    --radius-card: 16px;
 }
 
 html, body, [class*="css"], .stMarkdown, p, label {
@@ -128,81 +124,20 @@ h1, h2, h3, h4, h5, h6 {
 }
 [data-testid="stSidebar"] * { color: var(--ink) !important; }
 
-.stButton > button {
-    border-radius: 10px;
-    font-weight: 600;
-    border: 1px solid var(--border);
-    background-color: #FFFFFF !important;
-    color: var(--ink) !important;
-    box-shadow: var(--shadow-sm);
-    transition: all 0.15s ease;
-}
-.stButton > button:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, var(--primary), #3D4494) !important;
-    color: #FFFFFF !important;
-    border: none;
-    box-shadow: 0 4px 14px rgba(42, 47, 107, 0.28);
-}
+.stButton > button { border-radius: 8px; font-weight: 600; border: 1px solid var(--border); background-color: #FFFFFF !important; color: var(--ink) !important; }
+.stButton > button[kind="primary"] { background-color: var(--primary) !important; color: #FFFFFF !important; border: none; }
 .stButton > button[kind="primary"] * { color: #FFFFFF !important; }
-.stButton > button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #21245A, var(--teal)) !important;
-    box-shadow: 0 6px 18px rgba(42, 47, 107, 0.35);
-}
+.stButton > button[kind="primary"]:hover { background-color: #21245A !important; }
 
-.score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 14px 0; }
-.score-card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    padding: 16px 18px;
-    background-color: #FFFFFF !important;
-    box-shadow: var(--shadow-sm);
-    transition: box-shadow 0.15s ease;
-}
-.score-card:hover { box-shadow: var(--shadow-md); }
+.score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
+.score-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background-color: #FFFFFF !important; }
 .score-cat { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.05em; color: var(--muted) !important; text-transform: uppercase; font-weight: 600; }
 .score-stars { color: var(--amber) !important; font-size: 16px; margin: 4px 0; }
 .score-desc { font-size: 13px; color: var(--ink) !important; line-height: 1.5; white-space: pre-line; }
 
-.comp-card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-card);
-    padding: 16px 18px;
-    background-color: #FFFFFF !important;
-    margin-bottom: 12px;
-    box-shadow: var(--shadow-sm);
-}
+.comp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background-color: #FFFFFF !important; margin-bottom: 10px; }
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
-
-/* [추가 - Purity UI 스타일] expander/카드형 컨테이너에 둥근 모서리 + 은은한 그림자 */
-[data-testid="stExpander"] {
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-card) !important;
-    box-shadow: var(--shadow-sm);
-    overflow: hidden;
-}
-[data-testid="stExpander"] summary {
-    padding: 14px 18px !important;
-    font-weight: 600;
-}
-[data-testid="stExpander"] > div:last-child { padding: 4px 18px 18px 18px !important; }
-
-/* 알림 박스(success/info/warning/error)도 카드처럼 둥글고 은은한 그림자 + 왼쪽 컬러 포인트 */
-div[data-testid="stAlertContentSuccess"], div[data-testid="stAlertContentInfo"],
-div[data-testid="stAlertContentWarning"], div[data-testid="stAlertContentError"],
-div[data-baseweb="notification"] {
-    border-radius: 12px !important;
-    box-shadow: var(--shadow-sm);
-}
-div[data-baseweb="popover"] > div {
-    border-radius: var(--radius-card) !important;
-    box-shadow: var(--shadow-md) !important;
-}
-
-/* 이미지 미리보기, 파일 업로더 영역도 살짝 둥글게 */
-[data-testid="stImage"] img { border-radius: 10px; }
-[data-testid="stFileUploaderDropzone"] { border-radius: 12px !important; }
 
 div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
@@ -1005,7 +940,7 @@ def run_competitor_trend_only(ai_provider, api_key, competitor_images, competito
     return run_unified_ai_prompt(ai_provider, api_key, prompt, collage, status_callback=status_callback)
 
 
-
+def gather_collected_materials(segment):
     """01/02번 탭에서 세션에 모아둔 이미지를 브랜드별로 취합 (03/04번 탭 공용)"""
     competitors = load_competitors().get(segment, [])
     comp_materials = {}
