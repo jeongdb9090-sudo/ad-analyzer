@@ -88,6 +88,10 @@ st.markdown("""
     --primary-soft: #EEEFF7;
     --amber: #D97706;
     --teal: #0D9488;
+    /* [추가 - Purity UI 스타일] 카드용 부드러운 그림자 & 더 둥근 모서리 */
+    --shadow-sm: 0 1px 3px rgba(25, 27, 41, 0.06), 0 1px 2px rgba(25, 27, 41, 0.04);
+    --shadow-md: 0 8px 24px rgba(25, 27, 41, 0.08), 0 2px 6px rgba(25, 27, 41, 0.05);
+    --radius-card: 16px;
 }
 
 html, body, [class*="css"], .stMarkdown, p, label {
@@ -124,20 +128,81 @@ h1, h2, h3, h4, h5, h6 {
 }
 [data-testid="stSidebar"] * { color: var(--ink) !important; }
 
-.stButton > button { border-radius: 8px; font-weight: 600; border: 1px solid var(--border); background-color: #FFFFFF !important; color: var(--ink) !important; }
-.stButton > button[kind="primary"] { background-color: var(--primary) !important; color: #FFFFFF !important; border: none; }
+.stButton > button {
+    border-radius: 10px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    background-color: #FFFFFF !important;
+    color: var(--ink) !important;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.15s ease;
+}
+.stButton > button:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, var(--primary), #3D4494) !important;
+    color: #FFFFFF !important;
+    border: none;
+    box-shadow: 0 4px 14px rgba(42, 47, 107, 0.28);
+}
 .stButton > button[kind="primary"] * { color: #FFFFFF !important; }
-.stButton > button[kind="primary"]:hover { background-color: #21245A !important; }
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #21245A, var(--teal)) !important;
+    box-shadow: 0 6px 18px rgba(42, 47, 107, 0.35);
+}
 
-.score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 12px 0; }
-.score-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; background-color: #FFFFFF !important; }
+.score-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 14px 0; }
+.score-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 16px 18px;
+    background-color: #FFFFFF !important;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.15s ease;
+}
+.score-card:hover { box-shadow: var(--shadow-md); }
 .score-cat { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.05em; color: var(--muted) !important; text-transform: uppercase; font-weight: 600; }
 .score-stars { color: var(--amber) !important; font-size: 16px; margin: 4px 0; }
 .score-desc { font-size: 13px; color: var(--ink) !important; line-height: 1.5; white-space: pre-line; }
 
-.comp-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; background-color: #FFFFFF !important; margin-bottom: 10px; }
+.comp-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+    padding: 16px 18px;
+    background-color: #FFFFFF !important;
+    margin-bottom: 12px;
+    box-shadow: var(--shadow-sm);
+}
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
+
+/* [추가 - Purity UI 스타일] expander/카드형 컨테이너에 둥근 모서리 + 은은한 그림자 */
+[data-testid="stExpander"] {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-card) !important;
+    box-shadow: var(--shadow-sm);
+    overflow: hidden;
+}
+[data-testid="stExpander"] summary {
+    padding: 14px 18px !important;
+    font-weight: 600;
+}
+[data-testid="stExpander"] > div:last-child { padding: 4px 18px 18px 18px !important; }
+
+/* 알림 박스(success/info/warning/error)도 카드처럼 둥글고 은은한 그림자 + 왼쪽 컬러 포인트 */
+div[data-testid="stAlertContentSuccess"], div[data-testid="stAlertContentInfo"],
+div[data-testid="stAlertContentWarning"], div[data-testid="stAlertContentError"],
+div[data-baseweb="notification"] {
+    border-radius: 12px !important;
+    box-shadow: var(--shadow-sm);
+}
+div[data-baseweb="popover"] > div {
+    border-radius: var(--radius-card) !important;
+    box-shadow: var(--shadow-md) !important;
+}
+
+/* 이미지 미리보기, 파일 업로더 영역도 살짝 둥글게 */
+[data-testid="stImage"] img { border-radius: 10px; }
+[data-testid="stFileUploaderDropzone"] { border-radius: 12px !important; }
 
 div[data-baseweb="select"] > div,
 div[data-baseweb="base-input"] > input,
@@ -355,7 +420,59 @@ def reset_selectors():
 
 
 # ------------------------------------------------------------------
-# [추가 - 6번] 구글시트 기반 영구 저장소
+# [추가 - 6번, 재수정] GitHub Gist 기반 영구 저장소 (최우선 시도)
+# 구글시트 방식은 조직 정책(서비스 계정 키 생성 차단)에 걸려 사용이 막히는 경우가 있어,
+# 카드 등록이나 조직 승인 없이 바로 되는 GitHub Gist 방식을 기본으로 추가했습니다.
+# secrets.toml에 GITHUB_TOKEN / GITHUB_GIST_ID 가 설정되어 있으면 이 방식을 사용하고,
+# 없으면 기존 구글시트 → 그것도 없으면 로컬 파일 순서로 자동 대체됩니다.
+# ------------------------------------------------------------------
+GITHUB_API_BASE = "https://api.github.com"
+
+def _gist_headers():
+    token = st.secrets.get("GITHUB_TOKEN")
+    if not token:
+        return None
+    return {"Authorization": f"token {token}", "Accept": "application/vnd.github+json"}
+
+def _gist_get_content(filename):
+    headers = _gist_headers()
+    gist_id = st.secrets.get("GITHUB_GIST_ID")
+    if not headers or not gist_id:
+        return None
+    try:
+        resp = requests.get(f"{GITHUB_API_BASE}/gists/{gist_id}", headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return None
+        files = resp.json().get("files", {})
+        f = files.get(filename)
+        if f is None:
+            return ""  # 아직 이 파일(키)이 이 Gist 안에 없음 - 최초 실행 상태
+        content = f.get("content", "")
+        if f.get("truncated") and f.get("raw_url"):
+            r2 = requests.get(f["raw_url"], timeout=10)
+            if r2.status_code == 200:
+                content = r2.text
+        return content
+    except Exception:
+        return None
+
+def _gist_set_content(filename, content):
+    headers = _gist_headers()
+    gist_id = st.secrets.get("GITHUB_GIST_ID")
+    if not headers or not gist_id:
+        return False
+    try:
+        resp = requests.patch(
+            f"{GITHUB_API_BASE}/gists/{gist_id}", headers=headers,
+            json={"files": {filename: {"content": content if content else "{}"}}}, timeout=10,
+        )
+        return resp.status_code == 200
+    except Exception:
+        return False
+
+
+# ------------------------------------------------------------------
+# [추가 - 6번] 구글시트 기반 영구 저장소 (Gist 미설정 시 대체 옵션)
 # Streamlit Cloud의 로컬 파일시스템은 컨테이너가 재시작되면 초기화될 수 있어
 # 히스토리가 계속 리셋되는 문제가 있었습니다. secrets.toml에
 # GSHEET_ID / gcp_service_account 가 설정되어 있으면 자동으로 구글시트에
@@ -393,8 +510,19 @@ def _get_worksheet(sheet_name):
         return None
 
 def load_json(path, default):
-    """구글시트가 설정되어 있으면 시트에서, 아니면 로컬 파일에서 읽기"""
-    sheet_name = os.path.splitext(os.path.basename(path))[0]
+    """GitHub Gist가 설정되어 있으면 Gist에서, 아니면 구글시트, 그것도 없으면 로컬 파일에서 읽기"""
+    filename = os.path.basename(path)
+    sheet_name = os.path.splitext(filename)[0]
+
+    gist_content = _gist_get_content(filename)
+    if gist_content is not None:
+        if not gist_content.strip():
+            return default
+        try:
+            return json.loads(gist_content)
+        except Exception:
+            return default
+
     ws = _get_worksheet(sheet_name)
     if ws is not None:
         try:
@@ -405,19 +533,27 @@ def load_json(path, default):
             return default
         except Exception:
             return default
+
     if not os.path.exists(path): return default
     try:
         with open(path, "r", encoding="utf-8") as fp: return json.load(fp)
     except Exception: return default
 
 def save_json(path, data):
-    """구글시트가 설정되어 있으면 시트에, 아니면 로컬 파일에 쓰기
-    (구글시트 셀당 50,000자 제한이 있어 4만자 단위로 청크 분할 저장)"""
-    sheet_name = os.path.splitext(os.path.basename(path))[0]
+    """GitHub Gist가 설정되어 있으면 Gist에, 아니면 구글시트, 그것도 없으면 로컬 파일에 쓰기"""
+    filename = os.path.basename(path)
+    sheet_name = os.path.splitext(filename)[0]
+    text = json.dumps(data, ensure_ascii=False)
+
+    if _gist_headers() and st.secrets.get("GITHUB_GIST_ID"):
+        if _gist_set_content(filename, text):
+            return
+        # 실패 시 아래로 계속 진행해 로컬 파일로 폴백
+
     ws = _get_worksheet(sheet_name)
     if ws is not None:
         try:
-            text = json.dumps(data, ensure_ascii=False)
+            # (구글시트 셀당 50,000자 제한이 있어 4만자 단위로 청크 분할 저장)
             chunk_size = 40000
             chunks = [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)] or [""]
             ws.clear()
@@ -861,7 +997,7 @@ def _call_claude(api_key, prompt_text, collage_bytes):
     return client.messages.create(model="claude-sonnet-5", max_tokens=2000, messages=[{"role": "user", "content": content_payload}]).content[0].text
 
 
-def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None, status_callback=None, max_retries=3):
+def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None, status_callback=None, max_retries=1):
     """
     [수정 - 2번] 무료 API 요금제는 분당 요청 횟수가 매우 낮게 제한되어 있어(예: Gemini 무료 티어
     분당 5회) '429 quota exceeded' 오류가 자주 발생합니다. 이 함수는 그 오류를 감지하면
@@ -938,6 +1074,7 @@ def run_competitor_trend_only(ai_provider, api_key, competitor_images, competito
     names_str = ", ".join(competitor_names) if competitor_names else "경쟁사"
     prompt = COMPETITOR_ONLY_TREND_PROMPT.format(competitor_names=names_str)
     return run_unified_ai_prompt(ai_provider, api_key, prompt, collage, status_callback=status_callback)
+
 
 
 def gather_collected_materials(segment):
