@@ -834,7 +834,7 @@ def create_image_grid_collage(images_bytes_list, cols=4, thumb_size=(180, 180), 
 
 
 def create_split_collage(top_images_bytes, bottom_images_bytes, cols=4, thumb_size=(160, 160),
-                          top_max=16, bottom_max=12):
+                          top_max=12, bottom_max=8):
     """
     [추가 - 통합분석] 경쟁사(여러 브랜드 통합) 콜라주를 위쪽에, 자사 콜라주를 아래쪽에 놓고
     가운데 굵은 컬러 구분선을 넣어 하나의 이미지로 합칩니다.
@@ -1085,12 +1085,16 @@ def _call_claude(api_key, prompt_text, collage_bytes):
     return client.messages.create(model="claude-sonnet-5", max_tokens=2000, messages=[{"role": "user", "content": content_payload}]).content[0].text
 
 
-def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None, status_callback=None, max_retries=1):
+def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None, status_callback=None, max_retries=1, max_transient_retries=1):
     """
     [수정 - 2번] 무료 API 요금제는 분당 요청 횟수가 매우 낮게 제한되어 있어(예: Gemini 무료 티어
     분당 5회) '429 quota exceeded' 오류가 자주 발생합니다. 이 함수는 그 오류를 감지하면
     에러 메시지 안의 재시도 대기 시간(retry_delay)만큼 자동으로 기다렸다가 최대 max_retries번
     다시 시도합니다. 진행 상황은 status_callback으로 화면에 실시간 보고합니다.
+
+    [추가] 429(한도초과)와 별개로, 504/503/timeout 같은 '일시적 서버 오류'는 무료 티어 한도와
+    무관하게 서버가 잠깐 혼잡해서 나는 경우가 많아, 짧게 대기 후 최대 max_transient_retries번
+    별도로 재시도합니다.
     """
     dispatch = {
         "Gemini (Google)": _call_gemini,
@@ -1102,7 +1106,9 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None,
         raise ValueError(f"알 수 없는 AI 엔진: {ai_provider}")
 
     last_err_text = ""
-    for attempt in range(1, max_retries + 1):
+    transient_attempts_used = 0
+    attempt = 1
+    while attempt <= max_retries:
         if status_callback:
             status_callback(f"{ai_provider} 모델을 호출하는 중입니다... (시도 {attempt}/{max_retries})")
         try:
@@ -1112,18 +1118,35 @@ def run_unified_ai_prompt(ai_provider, api_key, prompt_text, collage_bytes=None,
         except Exception as e:
             err_text = str(e)
             last_err_text = err_text
-            is_quota_error = ("429" in err_text or "quota" in err_text.lower() or "rate" in err_text.lower())
+            err_lower = err_text.lower()
+            is_quota_error = ("429" in err_text or "quota" in err_lower or "rate" in err_lower)
+            is_transient_error = ("504" in err_text or "503" in err_text or "deadline" in err_lower or "unavailable" in err_lower or "timeout" in err_lower)
+
             if is_quota_error and attempt < max_retries:
                 wait_s = _extract_retry_seconds(err_text)
                 if status_callback:
                     status_callback(f"⏳ 무료 API 사용량 한도에 걸렸습니다. {wait_s}초 후 자동 재시도합니다... ({attempt}/{max_retries})")
                 time.sleep(wait_s)
+                attempt += 1
                 continue
             elif is_quota_error:
                 raise QuotaExceededError(
                     f"{ai_provider}의 무료 API 사용량 한도를 초과했습니다. "
                     f"잠시 후 다시 시도하시거나, Google AI Studio에서 결제(유료 티어)를 활성화하면 "
                     f"한도가 크게 늘어납니다. (원본 오류: {err_text[:200]})"
+                )
+            elif is_transient_error and transient_attempts_used < max_transient_retries:
+                transient_attempts_used += 1
+                wait_s = 8
+                if status_callback:
+                    status_callback(f"⏳ 서버가 일시적으로 응답이 없습니다(504/타임아웃). {wait_s}초 후 재시도합니다... ({transient_attempts_used}/{max_transient_retries})")
+                time.sleep(wait_s)
+                continue  # attempt는 그대로 두어 max_retries 소진과 별개로 재시도
+            elif is_transient_error:
+                raise QuotaExceededError(
+                    f"{ai_provider} 서버가 일시적으로 응답하지 않습니다(504/타임아웃). "
+                    f"보통 이미지가 많거나 서버가 혼잡할 때 발생해요. 잠시 후 다시 시도하거나, "
+                    f"소재 개수를 줄이거나, 다른 AI 엔진으로 시도해보세요. (원본 오류: {err_text[:200]})"
                 )
             else:
                 raise
