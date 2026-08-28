@@ -5,6 +5,7 @@ import os
 import re
 import time
 import subprocess
+import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse, parse_qs
@@ -174,6 +175,16 @@ h1, h2, h3, h4, h5, h6 {
 }
 .comp-name { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; color: var(--ink) !important; }
 .comp-meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted) !important; margin-top: 2px; }
+
+/* [추가 - 4번] 배너 소재 아이디어 카드용 라벨/값 스타일 */
+.banner-field { margin-bottom: 12px; }
+.banner-field:last-child { margin-bottom: 0; }
+.banner-label {
+    display: block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+    letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted) !important;
+    margin-bottom: 3px; font-weight: 700;
+}
+.banner-value { font-size: 14px; color: var(--ink) !important; line-height: 1.55; }
 
 /* [추가 - Purity UI 스타일] expander/카드형 컨테이너에 둥근 모서리 + 은은한 그림자 */
 [data-testid="stExpander"] {
@@ -570,6 +581,19 @@ def save_history_entry(entry):
     history.insert(0, entry)
     save_json(HISTORY_FILE, history)
 
+def upsert_history_entry(entry):
+    """[추가] entry에 'id'가 이미 히스토리에 있으면 그 기록을 갱신하고, 없으면 새로 추가합니다.
+    03번(갭분석)에서 먼저 기록을 만들고, 이어서 04번(배너 아이디어)까지 진행하면 같은 기록에
+    이어서 채워지도록 해서 히스토리에 중복 항목이 쌓이지 않게 합니다."""
+    history = load_history()
+    entry_id = entry.get("id")
+    idx = next((i for i, h in enumerate(history) if h.get("id") == entry_id), None)
+    if idx is not None:
+        history[idx] = entry
+    else:
+        history.insert(0, entry)
+    save_json(HISTORY_FILE, history)
+
 def load_all_brands(): return load_json(BRAND_FILE, {})
 def save_brand(segment, data):
     all_brands = load_all_brands()
@@ -613,9 +637,9 @@ def save_own_analysis(segment, data):
     all_own[segment] = data
     save_json(OWN_FILE, all_own)
 
-# --- [추가 - 5,6번] 세그먼트별 작업 상태(인사이트/갭분석/스토리보드) 영구 저장 ---
+# --- [추가 - 5,6번] 세그먼트별 작업 상태(인사이트/갭분석/배너 소재 아이디어) 영구 저장 ---
 def load_work_state(segment):
-    default = {"insight": "", "gap_analysis": "", "ideas": ""}
+    default = {"insight": "", "gap_analysis": "", "ideas": "", "current_entry_id": None}
     default.update(load_json(WORK_STATE_FILE, {}).get(segment, {}))
     return default
 
@@ -946,6 +970,70 @@ def render_integrated_scorecard(report):
     html += "</div>"
     st.markdown(html, unsafe_allow_html=True)
 
+
+def parse_banner_ideas(text):
+    """[추가 - 4번] AI가 반환한 '### [아이디어 N] 제목 / - **라벨**: 값' 형식의 텍스트를
+    아이디어별 딕셔너리 리스트로 파싱합니다. 형식이 어긋나면 빈 리스트를 반환해서
+    호출부가 원본 마크다운으로 안전하게 대체 표시하도록 합니다."""
+    blocks = re.split(r'###\s*\[아이디어\s*\d+\]\s*', text)
+    ideas = []
+    for block in blocks[1:]:
+        lines = block.strip().split("\n")
+        if not lines:
+            continue
+        title = lines[0].strip()
+        fields = {}
+        current_key = None
+        for raw_line in lines[1:]:
+            line = raw_line.strip()
+            if not line:
+                continue
+            m = re.match(r'-\s*\*\*(.+?)\*\*\s*(?:\([^)]*\))?\s*[:：]\s*(.*)', line)
+            if m:
+                current_key = m.group(1).strip()
+                fields[current_key] = m.group(2).strip()
+            elif current_key:
+                fields[current_key] = (fields[current_key] + " " + line).strip()
+        ideas.append({"title": title, "fields": fields})
+    return ideas
+
+
+def render_banner_ideas(text):
+    """배너 소재 아이디어를 아이디어별 탭 + 미니 배너 미리보기 카드로 한눈에 보이게 렌더링.
+    파싱이 안 되는 형식이면 원본 마크다운을 그대로 보여줍니다(안전한 폴백)."""
+    ideas = parse_banner_ideas(text)
+    if not ideas:
+        st.markdown(text)
+        return
+
+    tabs = st.tabs([f"💡 아이디어 {i+1}" for i in range(len(ideas))])
+    for tab, idea in zip(tabs, ideas):
+        with tab:
+            f = idea["fields"]
+            head = f.get("메인 헤드카피", "").strip()
+            sub = f.get("서브카피", "").strip()
+
+            # 1080x1350 배너 느낌의 미니 헤드카피 미리보기
+            st.markdown(f"""
+<div style="background: linear-gradient(135deg, var(--primary), var(--teal)); border-radius: var(--radius-card);
+            padding: 30px 22px; margin-bottom: 14px; text-align: center; box-shadow: var(--shadow-md);">
+    <div style="color: #FFFFFF; font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 21px; line-height: 1.35;">{head}</div>
+    <div style="color: rgba(255,255,255,0.88); font-size: 13px; margin-top: 8px;">{sub}</div>
+</div>
+""", unsafe_allow_html=True)
+
+            st.markdown(f'<div class="section-title" style="font-size:16px;">{idea["title"]}</div>', unsafe_allow_html=True)
+
+            field_order = ["매체/사이즈", "비주얼 레이아웃 구성", "USP 강조 배지/스탬프 문구", "CTA 버튼 문구", "차별화 포인트"]
+            card_html = '<div class="comp-card">'
+            for label in field_order:
+                value = f.get(label, "").strip()
+                if not value:
+                    continue
+                card_html += f'<div class="banner-field"><span class="banner-label">{label}</span><span class="banner-value">{value}</span></div>'
+            card_html += '</div>'
+            st.markdown(card_html, unsafe_allow_html=True)
+
 class QuotaExceededError(Exception):
     """무료 티어 쿼터/레이트리밋(429) 초과 - 재시도로도 해결 안 될 때 사용자에게 안내할 전용 예외"""
     pass
@@ -1159,7 +1247,7 @@ def build_report_docx(segment, brand_info, insight_text, gap_text, ideas_text):
         doc.add_heading("메시지 갭 분석", level=2)
         _add_markdown_to_docx(doc, gap_text)
     if ideas_text:
-        doc.add_heading("신규 소재 스토리보드 아이디어", level=2)
+        doc.add_heading("신규 소재 배너 아이디어 (1080x1350 DA)", level=2)
         _add_markdown_to_docx(doc, ideas_text)
 
     buf = io.BytesIO()
@@ -1199,7 +1287,7 @@ def build_report_pdf(segment, brand_info, insight_text, gap_text, ideas_text):
         _section("■ 브랜드 정보", info_lines)
     _section("■ 경쟁사 트렌드 인사이트", insight_text)
     _section("■ 메시지 갭 분석", gap_text)
-    _section("■ 신규 소재 스토리보드 아이디어", ideas_text)
+    _section("■ 신규 소재 배너 아이디어 (1080x1350 DA)", ideas_text)
 
     return bytes(pdf.output())
 
@@ -1333,7 +1421,7 @@ st.divider()
 # ------------------------------------------------------------------
 # 사이드바
 # ------------------------------------------------------------------
-NAV_ITEMS = ["🏆 01 · 경쟁사 소재 분석", "🏠 02 · 자사 소재 분석", "🔍 03 · 메시지 갭 분석", "🎬 04 · 스토리보드 아이디어", "🗂️ 05 · 히스토리"]
+NAV_ITEMS = ["🏆 01 · 경쟁사 소재 분석", "🏠 02 · 자사 소재 분석", "🔍 03 · 메시지 갭 분석", "🎬 04 · 배너 소재 아이디어", "🗂️ 05 · 히스토리"]
 
 # [수정] '다른 탭으로 이동' 버튼은 위젯이 이미 그려진 뒤 nav_selector 값을 직접 바꾸면
 # StreamlitAPIException이 나기 때문에, 위젯을 만들기 '전'에 대기 중인 이동 요청을 먼저 반영합니다.
@@ -1362,12 +1450,35 @@ if segment not in st.session_state.work:
         "insight": _persisted.get("insight", ""),
         "gap_analysis": _persisted.get("gap_analysis", ""),
         "ideas": _persisted.get("ideas", ""),
+        "current_entry_id": _persisted.get("current_entry_id"),
     }
 W = st.session_state.work[segment]
 
 def _persist_work_state():
-    """인사이트 / 갭분석 / 스토리보드는 새로고침·재접속해도 남도록 즉시 저장"""
+    """인사이트 / 갭분석 / 배너 소재 아이디어는 새로고침·재접속해도 남도록 즉시 저장"""
     save_work_state(segment, {
+        "insight": W.get("insight", ""),
+        "gap_analysis": W.get("gap_analysis", ""),
+        "ideas": W.get("ideas", ""),
+        "current_entry_id": W.get("current_entry_id"),
+    })
+
+def _save_current_history_snapshot():
+    """[추가 - 2번] 03(갭분석)만 하고 끝나도, 04(배너 아이디어)까지 이어가도 히스토리에 즉시 반영됩니다.
+    같은 세션(현재 entry_id)이면 새로 추가하지 않고 기존 기록을 이어서 갱신합니다."""
+    if not W.get("current_entry_id"):
+        W["current_entry_id"] = str(uuid.uuid4())
+        _persist_work_state()
+    comp_materials_snap, own_bytes_snap = gather_collected_materials(segment)
+    upsert_history_entry({
+        "id": W["current_entry_id"],
+        "timestamp": now_kst().strftime("%Y-%m-%d %H:%M"),
+        "segment": segment,
+        "brand_name": st.session_state.get(f"{segment}_brand_name", ""),
+        "brand_product": st.session_state.get(f"{segment}_brand_product", ""),
+        "target_audience": st.session_state.get(f"{segment}_target_audience", ""),
+        "material_count": len(comp_materials_snap) + (1 if own_bytes_snap else 0),
+        "competitor_names": list(comp_materials_snap.keys()),
         "insight": W.get("insight", ""),
         "gap_analysis": W.get("gap_analysis", ""),
         "ideas": W.get("ideas", ""),
@@ -1509,6 +1620,7 @@ elif nav == "03 · 메시지 갭 분석":
             if not st.session_state.get("current_api_key"):
                 st.error("상단에서 API Key를 입력해 주세요.")
             else:
+                W["current_entry_id"] = None  # [수정 - 2번] 새 분석은 새 히스토리 기록으로 시작 (예전 기록 덮어쓰기 방지)
                 comp_flat = [b for imgs in comp_materials.values() for b in imgs]
                 with st.status("경쟁사+자사 통합 분석 진행 중...", expanded=True) as gap_status:
                     def _update_gap_status(msg):
@@ -1525,6 +1637,7 @@ elif nav == "03 · 메시지 갭 분석":
                         W["gap_analysis"] = resp_text
                         W["insight"] = ""  # 이제 인사이트도 통합 리포트 안에 포함되므로 별도 필드는 비워둠
                         _persist_work_state()
+                        _save_current_history_snapshot()
                     except QuotaExceededError as e:
                         gap_status.update(label="무료 API 사용량 한도 초과", state="error")
                         st.error(f"🚦 {e}")
@@ -1542,6 +1655,7 @@ elif nav == "03 · 메시지 갭 분석":
             if not st.session_state.get("current_api_key"):
                 st.error("상단에서 API Key를 입력해 주세요.")
             else:
+                W["current_entry_id"] = None  # [수정 - 2번] 새 분석은 새 히스토리 기록으로 시작
                 comp_flat = [b for imgs in comp_materials.values() for b in imgs]
                 with st.status("경쟁사 소재 트렌드 분석 진행 중...", expanded=True) as trend_status:
                     def _update_trend_status(msg):
@@ -1554,6 +1668,7 @@ elif nav == "03 · 메시지 갭 분석":
                         trend_status.update(label="분석 완료!", state="complete")
                         W["insight"] = resp_text
                         _persist_work_state()
+                        _save_current_history_snapshot()
                     except QuotaExceededError as e:
                         trend_status.update(label="무료 API 사용량 한도 초과", state="error")
                         st.error(f"🚦 {e}")
@@ -1567,7 +1682,7 @@ elif nav == "03 · 메시지 갭 분석":
         st.markdown(W["gap_analysis"])
         st.divider()
         if st.button("📝 이 결과로 신규 소재 아이디어 만들기 →", type="primary", key="jump_to_04"):
-            st.session_state["_pending_nav"] = "🎬 04 · 스토리보드 아이디어"
+            st.session_state["_pending_nav"] = "🎬 04 · 배너 소재 아이디어"
             st.rerun()
     elif W.get("insight"):
         st.divider()
@@ -1575,10 +1690,10 @@ elif nav == "03 · 메시지 갭 분석":
         st.markdown(W["insight"])
 
 # ------------------------------------------------------------------
-# 04 · 스토리보드 아이디어
+# 04 · 배너 소재 아이디어
 # ------------------------------------------------------------------
-elif nav == "04 · 스토리보드 아이디어":
-    section_header("04", f"{segment} 맞춤형 스토리보드 아이디어", "브랜드/제품명만 입력해도 바로 생성돼요. 나머지 정보는 선택이에요 (채우면 더 정교해집니다).")
+elif nav == "04 · 배너 소재 아이디어":
+    section_header("04", f"{segment} 맞춤형 배너 소재 아이디어", "브랜드/제품명만 입력해도 바로 생성돼요. 나머지 정보는 선택이에요 (채우면 더 정교해집니다).")
 
     all_brands = load_all_brands()
     saved_brand = all_brands.get(segment, {})
@@ -1621,8 +1736,8 @@ elif nav == "04 · 스토리보드 아이디어":
         st.info("먼저 01 탭에서 경쟁사 소재를 수집해 주세요.")
     else:
         if not W.get("gap_analysis") and not W.get("insight"):
-            st.info("💡 03 탭에서 통합 분석을 먼저 실행하면 훨씬 더 정교한 스토리보드가 나와요. (지금도 생성은 가능합니다)")
-        if st.button("위닝 스토리보드 아이디어 생성", type="primary"):
+            st.info("💡 03 탭에서 통합 분석을 먼저 실행하면 훨씬 더 정교한 배너 소재 아이디어가 나와요. (지금도 생성은 가능합니다)")
+        if st.button("위닝 배너 소재 아이디어 생성", type="primary"):
             if not st.session_state.get("current_api_key"):
                 st.error("상단에서 API Key를 입력해 주세요.")
             else:
@@ -1630,9 +1745,19 @@ elif nav == "04 · 스토리보드 아이디어":
                 # [수정] 제품 설명을 안 채웠으면 세그먼트명으로 기본값 대체
                 effective_product = brand_product.strip() if brand_product.strip() else f"{segment} 대상 학습 서비스/제품"
 
-                STORYBOARD_PROMPT = """당신은 크리에이티브 디렉터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
-그리고 자사 디자인 메모리를 반영하여 차별화된 **광고 크리에이티브 스토리보드 3개**를 제안해주세요.
+                STORYBOARD_PROMPT = """당신은 퍼포먼스 마케팅 배너 디자이너 겸 카피라이터입니다. 아래 경쟁사 분석 결과, 메시지 갭 분석, 우리 브랜드 정보,
+그리고 자사 디자인 메모리를 반영하여 차별화된 **정적 이미지 배너(DA) 광고 소재 아이디어 3개**를 제안해주세요.
+
+⚠️ 매우 중요: 결과물은 영상/쇼츠가 아니라 **1080x1350 (4:5 세로형) 정적 이미지 배너**입니다.
+집행 매체는 **메타(인스타그램/페이스북 피드), 네이버 GFA, 구글 디맨드젠(Demand Gen)** 입니다.
+"오프닝 3초", "타임라인", "장면 전환" 같은 영상 연출 표현은 절대 쓰지 말고, 한 장의 이미지 안에서
+텍스트/이미지 요소가 어떻게 배치되는지(레이아웃)로만 설명해주세요.
 브랜드 정보 중 비어있는 항목은 메시지 갭 분석 내용을 참고해서 합리적으로 추정해 진행해주세요.
+
+⚠️ 아래 [메시지 갭 분석] 내용은 장식이 아니라 반드시 반영해야 할 핵심 재료입니다.
+3개 아이디어 중 최소 2개 이상은 [메시지 갭 분석]에서 "부족하다/보강하면 좋다"고 지적된
+메시지를 명시적으로 헤드카피 또는 서브카피에 녹여내야 합니다. 어떤 갭을 반영했는지
+각 아이디어의 '차별화 포인트' 항목에 한 줄로 명시해주세요 (예: "갭 분석에서 지적된 'oo 부족' 메시지를 헤드카피에 반영").
 
 [자사 브랜드 정보]
 - 브랜드/제품명: {brand_name}
@@ -1644,16 +1769,17 @@ elif nav == "04 · 스토리보드 아이디어":
 [메시지 갭 분석]
 {gap_context}
 
-각 아이디어는 아래 구조의 스토리보드 형식으로 작성해주세요:
+각 아이디어는 아래 구조의 '배너 시안 기획서' 형식으로 작성해주세요:
 ### [아이디어 N] 한줄 컨셉 타이틀
-- **타겟구간 / 매체 소구 포인트**: 
-- **훅킹 카피 (오프닝 3초)**: 
-- **비주얼 구성안 (연출 기획)**: 
-- **본문 설득 및 USP 소구 방식**: 
-- **CTA (행동 유도 문구)**: 
-- **차별화 포인트**: 
+- **매체/사이즈**: 메타 피드 · 네이버 GFA · 구글 디맨드젠 / 1080x1350
+- **메인 헤드카피** (배너에서 가장 크게 들어갈 한 줄, 15자 내외로 임팩트있게): 
+- **서브카피** (헤드카피를 보완하는 작은 문구): 
+- **비주얼 레이아웃 구성** (상단/중단/하단 영역에 각각 어떤 이미지·텍스트·배지를 배치할지, 정적 이미지 한 장 기준으로 구체적으로): 
+- **USP 강조 배지/스탬프 문구** (있다면, 예: "1위", "N만 명 선택" 등 짧은 강조 문구): 
+- **CTA 버튼 문구**: 
+- **차별화 포인트** (경쟁사 대비 이 배너가 다른 이유): 
 """
-                with st.status("스토리보드 기획안 작성 중...", expanded=True) as story_status:
+                with st.status("배너 소재 기획안 작성 중...", expanded=True) as story_status:
                     def _update_story_status(msg):
                         story_status.update(label=msg, state="running")
                     try:
@@ -1669,22 +1795,10 @@ elif nav == "04 · 스토리보드 아이디어":
                             ),
                             status_callback=_update_story_status,
                         )
-                        story_status.update(label="스토리보드 완성!", state="complete")
+                        story_status.update(label="배너 소재 기획안 완성!", state="complete")
                         W["ideas"] = resp_text
                         _persist_work_state()
-
-                        save_history_entry({
-                            "timestamp": now_kst().strftime("%Y-%m-%d %H:%M"),
-                            "segment": segment,
-                            "brand_name": brand_name,
-                            "brand_product": effective_product,
-                            "target_audience": target_audience,
-                            "material_count": len(comp_materials) + (1 if own_bytes else 0),
-                            "competitor_names": list(comp_materials.keys()),  # [추가] 어떤 경쟁사를 분석했는지 기록
-                            "insight": W.get("insight", ""),
-                            "gap_analysis": W.get("gap_analysis", ""),
-                            "ideas": W["ideas"],
-                        })
+                        _save_current_history_snapshot()  # [수정 - 2번] 03에서 만든 기록에 이어서 갱신 (중복 생성 방지)
                     except QuotaExceededError as e:
                         story_status.update(label="무료 API 사용량 한도 초과", state="error")
                         st.error(f"🚦 {e}")
@@ -1693,7 +1807,7 @@ elif nav == "04 · 스토리보드 아이디어":
                         st.error(f"오류 발생: {e}")
 
         if W["ideas"]:
-            st.markdown(W["ideas"])
+            render_banner_ideas(W["ideas"])
             st.divider()
             st.markdown("**📥 01~04 전체 내용 문서로 저장**")
             _brand_info = {
@@ -1729,7 +1843,7 @@ elif nav == "05 · 히스토리":
                 st.rerun()
 
         for i, entry in enumerate(filtered):
-            title = f"[{entry.get('segment', '-')}] {entry.get('brand_name', '(브랜드명 없음)')} · {entry.get('timestamp', '')}"
+            title = f"[{entry.get('segment', '-')}] {entry.get('brand_name') or '(브랜드명 미입력 · 갭분석만 진행)'} · {entry.get('timestamp', '')}"
             with st.expander(title):
                 comp_names = entry.get("competitor_names", [])
                 own_included = entry.get("material_count", 0) > len(comp_names)
@@ -1749,9 +1863,12 @@ elif nav == "05 · 히스토리":
                     st.markdown("**메시지 갭 분석**")
                     st.markdown(entry["gap_analysis"])
                     st.divider()
-                st.markdown("**스토리보드 아이디어**")
-                st.markdown(entry.get("ideas", ""))
-                st.divider()
+                if entry.get("ideas"):
+                    st.markdown("**배너 소재 아이디어**")
+                    render_banner_ideas(entry["ideas"])
+                    st.divider()
+                else:
+                    st.caption("아직 배너 소재 아이디어(04번 탭)는 생성되지 않은 기록이에요.")
                 st.caption("📥 이 기록 문서로 저장")
                 render_export_buttons(
                     entry.get("segment", segment),
