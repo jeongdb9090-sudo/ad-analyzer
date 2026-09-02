@@ -21,6 +21,12 @@ def now_kst():
     return datetime.now(KST)
 
 # 필수 패키지 자동 설치 보장 함수 (맨 처음에 실행)
+# [수정] 'pip' 명령을 직접 부르면 지금 실행 중인 파이썬 환경과 다른 pip가 잡혀서
+# "설치는 됐는데 이 앱에서는 안 보이는" 현상이 생길 수 있어, 반드시 지금 실행 중인
+# 파이썬(sys.executable)의 pip로 설치하도록 고정합니다. (requirements.txt 사용을 권장하며,
+# 이건 그것만으로 안 될 때를 위한 2차 안전장치입니다.)
+import sys
+import importlib
 def ensure_package(package_name, import_name=None):
     if import_name is None:
         import_name = package_name
@@ -28,9 +34,10 @@ def ensure_package(package_name, import_name=None):
         __import__(import_name)
     except ImportError:
         try:
-            subprocess.run(["pip", "install", package_name], check=True)
-        except Exception:
-            pass
+            subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", package_name], check=True)
+            importlib.invalidate_caches()  # 방금 설치한 패키지를 이 실행 중인 파이썬이 바로 인식하도록
+        except Exception as e:
+            print(f"[ensure_package] '{package_name}' 설치 실패: {e}")  # Streamlit Cloud 로그에서 확인 가능
 
 ensure_package("requests")
 ensure_package("Pillow", "PIL")
