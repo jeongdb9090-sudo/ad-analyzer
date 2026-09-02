@@ -974,8 +974,9 @@ def render_integrated_scorecard(report):
 def parse_banner_ideas(text):
     """[추가 - 4번] AI가 반환한 '### [아이디어 N] 제목 / - **라벨**: 값' 형식의 텍스트를
     아이디어별 딕셔너리 리스트로 파싱합니다. 형식이 어긋나면 빈 리스트를 반환해서
-    호출부가 원본 마크다운으로 안전하게 대체 표시하도록 합니다."""
-    blocks = re.split(r'###\s*\[아이디어\s*\d+\]\s*', text)
+    호출부가 원본 마크다운으로 안전하게 대체 표시하도록 합니다.
+    [수정] AI가 대괄호를 빼먹거나 콜론을 붙이는 등 살짝 변형해도 인식하도록 정규식을 관대하게 조정."""
+    blocks = re.split(r'###\s*\[?\s*아이디어\s*\d+\s*\]?\s*[:：]?\s*', text)
     ideas = []
     for block in blocks[1:]:
         lines = block.strip().split("\n")
@@ -988,7 +989,7 @@ def parse_banner_ideas(text):
             line = raw_line.strip()
             if not line:
                 continue
-            m = re.match(r'-\s*\*\*(.+?)\*\*\s*(?:\([^)]*\))?\s*[:：]\s*(.*)', line)
+            m = re.match(r'[-*]\s*\*\*(.+?)\*\*\s*(?:\([^)]*\))?\s*[:：]\s*(.*)', line)
             if m:
                 current_key = m.group(1).strip()
                 fields[current_key] = m.group(2).strip()
@@ -998,12 +999,65 @@ def parse_banner_ideas(text):
     return ideas
 
 
+def _simple_markdown_to_html(text):
+    """[추가 - 4번] 마크다운(볼드/리스트)을 간단한 HTML로 변환. 카드 하나를 통째로 한 번의
+    st.markdown 호출로 그려야 실제로 카드 테두리 안에 내용이 들어가기 때문에 필요합니다."""
+    html_parts = []
+    in_list = False
+    for raw_line in (text or "").split("\n"):
+        line = raw_line.strip()
+        if not line:
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            continue
+        line_html = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', line)
+        m = re.match(r'^[-*]\s+(.*)', line_html) or re.match(r'^\d+\.\s+(.*)', line_html)
+        if m:
+            if not in_list:
+                html_parts.append('<ul style="margin:4px 0 8px 18px; padding:0;">')
+                in_list = True
+            html_parts.append(f"<li style='margin-bottom:4px;'>{m.group(1)}</li>")
+        else:
+            if in_list:
+                html_parts.append("</ul>")
+                in_list = False
+            html_parts.append(f"<p style='margin:6px 0;'>{line_html}</p>")
+    if in_list:
+        html_parts.append("</ul>")
+    return "".join(html_parts)
+
+
+def render_markdown_as_cards(text):
+    """[추가 - 4번] '### 제목' 기준으로 섹션을 나눠, 섹션마다 카드(테두리+그림자)로 감싸서 표시.
+    03번 갭 분석 결과나, 04번 아이디어 파싱이 실패했을 때 폴백으로 사용해서
+    '문단 구분 없이 다 붙어서 나오는' 문제를 없앱니다."""
+    if not text or not text.strip():
+        return
+    parts = re.split(r'(?m)^###\s+', text)
+    preamble = parts[0].strip()
+    if preamble:
+        st.markdown(_simple_markdown_to_html(preamble), unsafe_allow_html=True)
+    for part in parts[1:]:
+        split_lines = part.split("\n", 1)
+        title = split_lines[0].strip()
+        body = split_lines[1] if len(split_lines) > 1 else ""
+        body_html = _simple_markdown_to_html(body)
+        card_html = (
+            f'<div class="comp-card">'
+            f'<div class="comp-name" style="margin-bottom:8px;">{title}</div>'
+            f'<div class="banner-value">{body_html}</div>'
+            f'</div>'
+        )
+        st.markdown(card_html, unsafe_allow_html=True)
+
+
 def render_banner_ideas(text):
     """배너 소재 아이디어를 아이디어별 탭 + 미니 배너 미리보기 카드로 한눈에 보이게 렌더링.
     파싱이 안 되는 형식이면 원본 마크다운을 그대로 보여줍니다(안전한 폴백)."""
     ideas = parse_banner_ideas(text)
     if not ideas:
-        st.markdown(text)
+        render_markdown_as_cards(text)
         return
 
     tabs = st.tabs([f"💡 아이디어 {i+1}" for i in range(len(ideas))])
@@ -1278,8 +1332,21 @@ def build_report_docx(segment, brand_info, insight_text, gap_text, ideas_text):
     return buf.getvalue()
 
 
+_EMOJI_PATTERN = re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F1E6-\U0001F1FF\U00002190-\U000021FF\U00002B00-\U00002BFF]+",
+    flags=re.UNICODE,
+)
+def _strip_emoji(text):
+    """[추가] PDF용 한글 폰트엔 이모지 글리프가 없어서, 이모지가 섞이면 그 부분만 조용히
+    깨져 보이는 문제가 있었습니다. PDF/워드로 내보낼 때는 이모지를 미리 제거합니다."""
+    return _EMOJI_PATTERN.sub("", text or "")
+
+
 def build_report_pdf(segment, brand_info, insight_text, gap_text, ideas_text):
     from fpdf import FPDF
+    insight_text = _strip_emoji(insight_text)
+    gap_text = _strip_emoji(gap_text)
+    ideas_text = _strip_emoji(ideas_text)
     font_path = _ensure_korean_font()
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -1702,7 +1769,15 @@ elif nav == "03 · 메시지 갭 분석":
     if W.get("gap_analysis"):
         st.divider()
         st.markdown("### 📊 경쟁사 + 자사 통합 분석 리포트")
-        st.markdown(W["gap_analysis"])
+        render_markdown_as_cards(W["gap_analysis"])
+        st.divider()
+        st.markdown("**📥 지금까지 내용 문서로 저장**")
+        _brand_info_03 = {
+            "brand_name": st.session_state.get(f"{segment}_brand_name", ""),
+            "brand_product": st.session_state.get(f"{segment}_brand_product", ""),
+            "target_audience": st.session_state.get(f"{segment}_target_audience", ""),
+        }
+        render_export_buttons(segment, _brand_info_03, W.get("insight", ""), W.get("gap_analysis", ""), W.get("ideas", ""), key_prefix="tab03")
         st.divider()
         if st.button("📝 이 결과로 신규 소재 아이디어 만들기 →", type="primary", key="jump_to_04"):
             st.session_state["_pending_nav"] = "🎬 04 · 배너 소재 아이디어"
@@ -1710,7 +1785,15 @@ elif nav == "03 · 메시지 갭 분석":
     elif W.get("insight"):
         st.divider()
         st.markdown("### 📊 경쟁사 트렌드 리포트")
-        st.markdown(W["insight"])
+        render_markdown_as_cards(W["insight"])
+        st.divider()
+        st.markdown("**📥 지금까지 내용 문서로 저장**")
+        _brand_info_03 = {
+            "brand_name": st.session_state.get(f"{segment}_brand_name", ""),
+            "brand_product": st.session_state.get(f"{segment}_brand_product", ""),
+            "target_audience": st.session_state.get(f"{segment}_target_audience", ""),
+        }
+        render_export_buttons(segment, _brand_info_03, W.get("insight", ""), W.get("gap_analysis", ""), W.get("ideas", ""), key_prefix="tab03_insight")
 
 # ------------------------------------------------------------------
 # 04 · 배너 소재 아이디어
