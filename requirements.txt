@@ -1,8 +1,13 @@
 streamlit
-playwright
-beautifulsoup4
 requests
 Pillow
+beautifulsoup4
 google-generativeai
 openai
 anthropic
+playwright
+gspread
+google-auth
+python-docx
+fpdf2
+tzdata
